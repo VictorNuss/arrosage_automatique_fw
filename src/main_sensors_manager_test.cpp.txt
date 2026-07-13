@@ -1,0 +1,50 @@
+#include <Arduino.h>
+
+
+#include "WaterLevelSensor.h"
+#include "SensorManager.h"
+
+
+
+WaterLevelSensor tank(
+    "Cuve",
+    32,
+    33
+);
+
+
+
+Sensor* sensors[] =
+{
+    &tank
+};
+
+
+
+SensorManager sensorManager(
+    sensors,
+    1
+);
+
+
+
+
+void setup()
+{
+
+    Serial.begin(115200);
+
+
+    sensorManager.begin();
+
+}
+
+
+
+
+void loop()
+{
+
+    sensorManager.update();
+
+}

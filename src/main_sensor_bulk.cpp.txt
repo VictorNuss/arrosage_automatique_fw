@@ -1,0 +1,64 @@
+#include <Arduino.h>
+
+
+#define TRIG_PIN 32
+#define ECHO_PIN 33
+
+
+void setup()
+{
+    Serial.begin(115200);
+
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+
+    digitalWrite(TRIG_PIN, LOW);
+
+    delay(500);
+
+    Serial.println("Test JSN-SR04M-2");
+}
+
+
+void loop()
+{
+
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+
+
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(20);
+
+
+    digitalWrite(TRIG_PIN, LOW);
+
+
+
+    unsigned long duration =
+        pulseIn(
+            ECHO_PIN,
+            HIGH,
+            40000
+        );
+
+
+    Serial.print("Echo : ");
+    Serial.println(duration);
+
+
+
+    if(duration > 0)
+    {
+        Serial.print("Distance : ");
+        Serial.print(duration / 58.0);
+        Serial.println(" cm");
+    }
+    else
+    {
+        Serial.println("Pas d'echo");
+    }
+
+
+    delay(1000);
+}
