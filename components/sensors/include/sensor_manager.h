@@ -27,6 +27,13 @@ void sensor_manager_init(void);
  * sa derniere valeur connue (0.0 si aucune lecture n'a encore reussi)
  * plutot que d'omettre la cle.
  *
+ * Chaque capteur a son propre intervalle minimal de relecture (voir la
+ * table de config interne, sensor_manager.cpp) : cette fonction peut donc
+ * etre appelee bien plus souvent que le rythme d'acquisition materielle
+ * reel d'un capteur donne (ex. par le serveur web de test, rafraichi toutes
+ * les 3s) sans le solliciter inutilement - la derniere valeur connue est
+ * republiee tant que son intervalle n'est pas ecoule.
+ *
  * @param root Objet cJSON dans lequel ajouter les mesures
  */
 void sensor_manager_collect(cJSON* root);
