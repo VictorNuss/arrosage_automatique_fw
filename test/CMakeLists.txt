@@ -13,7 +13,7 @@ set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../components")
 # (ex: esp_driver_ana_cmpr requiert esp_hal_ana_cmpr, qui n'est pas
 # enregistre pour la cible linux). Lister ici uniquement ce qui est reellement
 # necessaire evite ce probleme.
-set(COMPONENTS main unity command valve_logic cjson)
+set(COMPONENTS main unity command valve_logic sensor_logic cjson)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(test_arrosage_fw)

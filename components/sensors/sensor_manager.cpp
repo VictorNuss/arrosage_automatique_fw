@@ -8,6 +8,7 @@
 #include "battery_placeholder_sensor.h"
 #include "ds18b20_temperature_sensor.h"
 #include "sensor.h"
+#include "sensor_logic.h"
 #include "soil_humidity_sensor.h"
 #include "water_level_sensor.h"
 
@@ -82,7 +83,7 @@ void sensor_manager_collect(cJSON* root)
 
     for (size_t i = 0; i < kSensorCount; i++) {
         Sensor* sensor = s_sensors[i].sensor;
-        bool due = (now_us - s_last_read_us[i]) >= (int64_t)s_sensors[i].min_interval_ms * 1000;
+        bool due = sensor_logic_is_due(now_us, s_last_read_us[i], s_sensors[i].min_interval_ms);
 
         if (due) {
             float value = s_last_good[i];
