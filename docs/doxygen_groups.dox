@@ -1,0 +1,57 @@
+/**
+ * @file doxygen_groups.dox
+ * @brief Definitions des modules Doxygen (aucun code, uniquement de la documentation).
+ */
+
+/**
+ * @defgroup valve Vannes
+ * @brief Pilotage GPIO des vannes et auto-fermeture par esp_timer.
+ *
+ * Table de configuration statique (nom humain, cle du contrat MQTT, GPIO,
+ * duree max d'ouverture) parcourue de facon generique : ajouter une vanne
+ * revient a ajouter une ligne dans valve_config.cpp, sans dupliquer de code.
+ */
+
+/**
+ * @defgroup valve_logic Logique des vannes (pure)
+ * @brief Clamp de securite et recherche par cle, sans acces materiel.
+ *
+ * Isolee du GPIO/timer pour rester testable sur l'hote (voir test/main/) :
+ * c'est cette logique qui garantit qu'une vanne ne peut pas s'ouvrir
+ * indefiniment ni depasser sa duree max configuree.
+ */
+
+/**
+ * @defgroup sensors Capteurs
+ * @brief Interface commune Sensor et implementations (ultrason, ADC, 1-Wire).
+ *
+ * Chaque capteur implemente l'interface ::Sensor, isolant le driver
+ * materiel du reste de l'application - remplacer un capteur ne touche que
+ * son implementation.
+ */
+
+/**
+ * @defgroup command Commandes
+ * @brief Parsing du contrat MQTT/HTTP commande (JSON -> ::Command).
+ *
+ * Utilise a la fois par le topic MQTT commande et par le serveur web de
+ * test : les deux transports partagent exactement le meme parseur.
+ */
+
+/**
+ * @defgroup net Reseau
+ * @brief WiFi, synchronisation NTP et client MQTT.
+ *
+ * net_events.h expose l'event group partage (bits WiFi/MQTT/NTP) utilise
+ * par les autres modules pour connaitre l'etat de connexion.
+ */
+
+/**
+ * @defgroup app_tasks Taches applicatives
+ * @brief Tasks FreeRTOS (commande, etat) et outils de diagnostic.
+ */
+
+/**
+ * @defgroup web Serveur web de test
+ * @brief Page de test locale + API JSON, meme format que le contrat MQTT.
+ */

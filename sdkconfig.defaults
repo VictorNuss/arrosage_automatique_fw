@@ -1,0 +1,13 @@
+# Cible : ESP32 classique dual-core, carte type esp32dev (upesy_wroom), 4MB flash
+CONFIG_IDF_TARGET="esp32"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Pas d'OTA pour l'instant : table de partitions simple (factory app + NVS)
+CONFIG_PARTITION_TABLE_SINGLE_APP=y
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+
+# Reconnexion Wi-Fi geree par l'app (evenements), pas de retry illimite du driver
+CONFIG_ESP_WIFI_SW_COEXIST_ENABLE=y
+
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

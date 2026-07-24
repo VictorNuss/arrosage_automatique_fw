@@ -1,0 +1,61 @@
+menu "Arrosage Firmware Configuration"
+
+    config ARROSAGE_DEVICE_ID
+        string "Device ID (utilise dans les topics MQTT arrosage/<device_id>/...)"
+        default "arrosage-01"
+        help
+            Identifiant fixe du device, choisi au moment du flashage. Doit
+            etre unique par device deploye (sert aussi de client_id MQTT).
+
+    config ARROSAGE_WIFI_SSID
+        string "SSID WiFi"
+        default "myssid"
+
+    config ARROSAGE_WIFI_PASSWORD
+        string "Mot de passe WiFi"
+        default "mypassword"
+
+    config ARROSAGE_MQTT_BROKER_URI
+        string "URI du broker MQTT (ex: mqtt://192.168.1.10:1883)"
+        default "mqtt://192.168.1.10:1883"
+        help
+            Broker Mosquitto local, sans TLS, acces anonyme.
+
+    config ARROSAGE_NTP_SERVER
+        string "Serveur NTP"
+        default "pool.ntp.org"
+
+    config ARROSAGE_STATE_PUBLISH_INTERVAL_S
+        int "Intervalle de publication de l'etat (secondes)"
+        default 60
+        help
+            Doit rester proche de 60s pour respecter le contrat MQTT etat.
+
+    config ARROSAGE_TANK_HEIGHT_CM
+        int "Hauteur totale de la cuve (cm), du capteur ultrason au fond"
+        default 100
+        help
+            Utilisee pour convertir la distance mesuree par le capteur
+            ultrason en niveau d'eau (water_level_cm = hauteur - distance).
+            A calibrer selon le montage physique reel de chaque installation.
+
+    config ARROSAGE_ENABLE_DIAG_CONSOLE
+        bool "Activer la console de diagnostic (REPL UART) au demarrage"
+        default n
+        help
+            A activer uniquement pour le bring-up materiel (voir
+            docs/bring_up_checklist.md) : remplace le mode normal (tasks
+            command/sensor) par une console interactive de test.
+
+    config ARROSAGE_ENABLE_WEB_SERVER
+        bool "Activer le serveur web local de test (port 80)"
+        default y
+        help
+            Serveur HTTP local (page de test + API JSON) permettant de lire
+            l'etat et d'envoyer des commandes exactement au meme format que
+            le contrat MQTT, sans dependre du backend/broker. Utile pour
+            valider le firmware avant de brancher le vrai serveur. HTTP
+            simple, sans authentification - reseau local de confiance
+            uniquement (meme modele que le broker Mosquitto anonyme).
+
+endmenu

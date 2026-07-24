@@ -1,0 +1,41 @@
+# Configuration Doxygen pour arrosage_fw.
+# Generation : doxygen Doxyfile   (depuis la racine du repo)
+# Resultat   : docs/doxygen/html/index.html
+
+PROJECT_NAME           = "arrosage_fw"
+PROJECT_BRIEF          = "Firmware ESP32 du controleur d'arrosage connecte (ESP-IDF / FreeRTOS)"
+OUTPUT_DIRECTORY       = docs/doxygen
+
+INPUT                  = README.md \
+                         docs/mqtt_contract.md \
+                         docs/bring_up_checklist.md \
+                         docs/doxygen_groups.dox \
+                         components \
+                         main
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp *.cpp *.dox *.md
+USE_MDFILE_AS_MAINPAGE = README.md
+
+EXCLUDE_PATTERNS       = */build/* */managed_components/*
+
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+EXTRACT_PRIVATE        = YES
+
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+SOURCE_BROWSER         = YES
+SORT_MEMBER_DOCS       = NO
+
+HAVE_DOT               = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+DOT_IMAGE_FORMAT       = svg
+
+WARN_IF_UNDOCUMENTED   = NO
+QUIET                  = YES
+
+OPTIMIZE_OUTPUT_FOR_C  = NO
+BUILTIN_STL_SUPPORT    = YES
