@@ -1,13 +1,15 @@
 #include "valve_config.h"
 
-// Mapping GPIO / duree max repris du prototype (src/main.cpp d'origine) :
-// Pelouse=25/1800s, Potager=26/900s, Serre=27/600s. Le mqtt_key est nouveau
-// (impose par le contrat MQTT figé), le nom humain et le pin sont conserves.
+// Mapping GPIO (configurable via `idf.py menuconfig` -> Broches) / duree max
+// (fixe en dur, pas un "port") repris du prototype (src/main.cpp d'origine) :
+// Pelouse=1800s, Potager=900s, Serre=600s. Le mqtt_key est nouveau (impose
+// par le contrat MQTT figé), le nom humain et les durees sont conservees.
 const valve_config_t VALVE_CONFIGS[] = {
-    {"Pelouse", "vanne_1", GPIO_NUM_25, 1800},
-    {"Potager", "vanne_2", GPIO_NUM_26, 900},
-    {"Serre", "vanne_3", GPIO_NUM_27, 600},
-    // Ajouter une 4e/5e vanne : une ligne ici, ex.
+    {"Pelouse", "vanne_1", (gpio_num_t)CONFIG_ARROSAGE_VALVE1_GPIO, 1800},
+    {"Potager", "vanne_2", (gpio_num_t)CONFIG_ARROSAGE_VALVE2_GPIO, 900},
+    {"Serre", "vanne_3", (gpio_num_t)CONFIG_ARROSAGE_VALVE3_GPIO, 600},
+    // Ajouter une 4e/5e vanne : une ligne ici (ajouter aussi son GPIO au
+    // Kconfig si on veut le rendre configurable), ex.
     // {"Verger", "vanne_4", GPIO_NUM_14, 1200},
 };
 

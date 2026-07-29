@@ -16,14 +16,14 @@ namespace {
 
 const char* TAG = "sensor_manager";
 
-// GPIO reserves aux capteurs (distincts des pins vannes 25/26/27, voir
-// components/valve/valve_config.cpp) :
-//  - ultrason JSN-SR04M-2 (repris du prototype) : trig=32, echo=33
-//  - DS18B20 (1-Wire)                            : GPIO 4
-//  - capacitif sol (ADC1)                         : GPIO 34 / ADC_CHANNEL_6
-WaterLevelSensor s_water_level(GPIO_NUM_32, GPIO_NUM_33, (float)CONFIG_ARROSAGE_TANK_HEIGHT_CM);
-Ds18b20TemperatureSensor s_temperature(GPIO_NUM_4);
-SoilHumiditySensor s_soil_humidity(ADC_CHANNEL_6);
+// GPIO/canal ADC des capteurs, configurables via `idf.py menuconfig` ->
+// Broches (GPIO / ADC) - distincts des pins vannes, voir
+// components/valve/valve_config.cpp.
+WaterLevelSensor s_water_level((gpio_num_t)CONFIG_ARROSAGE_WATER_LEVEL_TRIG_GPIO,
+                                (gpio_num_t)CONFIG_ARROSAGE_WATER_LEVEL_ECHO_GPIO,
+                                (float)CONFIG_ARROSAGE_TANK_HEIGHT_CM);
+Ds18b20TemperatureSensor s_temperature((gpio_num_t)CONFIG_ARROSAGE_TEMPERATURE_GPIO);
+SoilHumiditySensor s_soil_humidity((adc_channel_t)CONFIG_ARROSAGE_SOIL_HUMIDITY_ADC_CHANNEL);
 BatteryPlaceholderSensor s_battery;
 
 struct sensor_entry_t {

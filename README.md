@@ -63,6 +63,10 @@ Section **"Arrosage Firmware Configuration"** (voir
 | `CONFIG_ARROSAGE_STATE_PUBLISH_INTERVAL_S` | Intervalle de publication de l'état | `60` |
 | `CONFIG_ARROSAGE_TANK_HEIGHT_CM` | Hauteur de la cuve (calibration du capteur ultrason) | `100` |
 | `CONFIG_ARROSAGE_ENABLE_DIAG_CONSOLE` | Active la console de diagnostic REPL au lieu du mode normal | `n` |
+| *(sous-menu "Broches (GPIO / ADC)")* `ARROSAGE_VALVE1/2/3_GPIO` | GPIO des relais vannes 1/2/3 | `25` / `26` / `27` |
+| `ARROSAGE_WATER_LEVEL_TRIG_GPIO` / `..._ECHO_GPIO` | GPIO trig/echo du capteur ultrason | `32` / `33` |
+| `ARROSAGE_TEMPERATURE_GPIO` | GPIO de la sonde DS18B20 (1-Wire) | `4` |
+| `ARROSAGE_SOIL_HUMIDITY_ADC_CHANNEL` | Canal ADC1 du capteur d'humidité du sol (pas le numéro de GPIO) | `6` (= GPIO34) |
 
 Ces valeurs sont écrites dans `sdkconfig` (généré, ignoré par git — seul
 `sdkconfig.defaults` est versionné).
@@ -111,6 +115,10 @@ Une seule ligne à ajouter dans
 (nom humain, clé du contrat MQTT, GPIO du relais, durée max d'ouverture en
 secondes). Aucun autre fichier à modifier — `VALVE_COUNT`, la boucle
 d'initialisation, le JSON d'état et les commandes suivent automatiquement.
+Pour rendre le GPIO de cette 4e/5e vanne configurable via `menuconfig` comme
+les trois premières, ajouter une entrée `ARROSAGE_VALVE4_GPIO` dans
+[`main/Kconfig.projbuild`](main/Kconfig.projbuild) et l'utiliser ici à la
+place du `GPIO_NUM_14` en dur.
 
 ### Remplacer un capteur
 
@@ -122,14 +130,18 @@ nouvelle classe qui implémente cette interface et de la substituer dans
 [`components/sensors/sensor_manager.cpp`](components/sensors/sensor_manager.cpp) —
 rien d'autre à toucher (le reste du firmware ne connaît que l'interface).
 
-### GPIO utilisés (à adapter au câblage réel si besoin)
+### GPIO utilisés (configurables via `idf.py menuconfig` → *Broches (GPIO / ADC)*)
 
-| Fonction | GPIO |
-|---|---|
-| Vanne 1 / 2 / 3 (relais) | 25 / 26 / 27 |
-| Ultrason JSN-SR04M-2 (trig / echo) | 32 / 33 |
-| DS18B20 (1-Wire, température) | 4 |
-| Capacitif sol (ADC1, humidité) | 34 (`ADC_CHANNEL_6`) |
+| Fonction | GPIO par défaut | Option Kconfig |
+|---|---|---|
+| Vanne 1 / 2 / 3 (relais) | 25 / 26 / 27 | `ARROSAGE_VALVE1/2/3_GPIO` |
+| Ultrason JSN-SR04M-2 (trig / echo) | 32 / 33 | `ARROSAGE_WATER_LEVEL_TRIG/ECHO_GPIO` |
+| DS18B20 (1-Wire, température) | 4 | `ARROSAGE_TEMPERATURE_GPIO` |
+| Capacitif sol (ADC1, humidité) | 34 (canal `6`) | `ARROSAGE_SOIL_HUMIDITY_ADC_CHANNEL` |
+
+Adapter le câblage réel ne nécessite donc plus de toucher au code — un
+simple `idf.py menuconfig` suffit (sauf pour une 4e/5e vanne au-delà des
+trois configurables par défaut, voir ci-dessus).
 
 ## 6. Serveur web de test
 

@@ -47,6 +47,44 @@ menu "Arrosage Firmware Configuration"
             docs/bring_up_checklist.md) : remplace le mode normal (tasks
             command/sensor) par une console interactive de test.
 
+    menu "Broches (GPIO / ADC)"
+
+        config ARROSAGE_VALVE1_GPIO
+            int "GPIO vanne 1 (relais)"
+            default 25
+
+        config ARROSAGE_VALVE2_GPIO
+            int "GPIO vanne 2 (relais)"
+            default 26
+
+        config ARROSAGE_VALVE3_GPIO
+            int "GPIO vanne 3 (relais)"
+            default 27
+
+        config ARROSAGE_WATER_LEVEL_TRIG_GPIO
+            int "GPIO trig capteur ultrason (niveau d'eau)"
+            default 32
+
+        config ARROSAGE_WATER_LEVEL_ECHO_GPIO
+            int "GPIO echo capteur ultrason (niveau d'eau)"
+            default 33
+
+        config ARROSAGE_TEMPERATURE_GPIO
+            int "GPIO sonde DS18B20 (1-Wire, temperature)"
+            default 4
+
+        config ARROSAGE_SOIL_HUMIDITY_ADC_CHANNEL
+            int "Canal ADC1 capteur d'humidite du sol (capacitif)"
+            range 0 9
+            default 6
+            help
+                Canal ADC1 (pas le numero de GPIO). Sur ESP32 classique, le
+                canal 6 correspond a GPIO34 - voir la documentation ESP-IDF
+                (peripherals/adc) pour la table de correspondance canal/GPIO
+                complete si un autre canal est utilise.
+
+    endmenu
+
     config ARROSAGE_ENABLE_WEB_SERVER
         bool "Activer le serveur web local de test (port 80)"
         default y
