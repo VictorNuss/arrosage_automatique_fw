@@ -96,4 +96,26 @@ menu "Arrosage Firmware Configuration"
             simple, sans authentification - reseau local de confiance
             uniquement (meme modele que le broker Mosquitto anonyme).
 
+    config ARROSAGE_ENABLE_OTA
+        bool "Activer la mise a jour du firmware par WiFi (OTA, POST /api/ota)"
+        depends on ARROSAGE_ENABLE_WEB_SERVER
+        default y
+        help
+            Ajoute un endpoint POST /api/ota au serveur web de test,
+            permettant d'envoyer un nouveau firmware (.bin) depuis la page
+            web ou via curl, sans passer par USB. Active par defaut, au
+            meme titre que le reste du serveur web (lecture d'etat,
+            pilotage des vannes) - meme modele de confiance ("reseau local
+            de confiance uniquement"). A la difference des autres fonctions
+            du serveur toutefois, une mise a jour de firmware acceptee sans
+            authentification equivaut a une prise de controle totale du
+            device par quiconque sur le reseau local : desactiver cette
+            option si le reseau n'est pas de confiance.
+
+            Necessite une table de partitions compatible OTA (voir
+            sdkconfig.defaults, CONFIG_PARTITION_TABLE_TWO_OTA) : un device
+            deja flashe avec l'ancienne table "single app" doit etre
+            entierement reflashe une fois (idf.py erase-flash puis idf.py
+            flash) avant de pouvoir utiliser cette fonctionnalite.
+
 endmenu

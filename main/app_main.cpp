@@ -4,6 +4,7 @@
 #include "command_task.h"
 #include "mqtt.h"
 #include "net_events.h"
+#include "ota.h"
 #include "sensor_manager.h"
 #include "sensor_task.h"
 #include "time_sync.h"
@@ -43,6 +44,13 @@ extern "C" void app_main(void)
 #if CONFIG_ARROSAGE_ENABLE_WEB_SERVER
     web_server_start(command_queue);
 #endif
+
+    // Confirme que cette image demarre correctement, annulant tout rollback
+    // automatique en attente (voir CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE) -
+    // necessaire pour TOUTE image flashee (USB ou OTA), pas seulement apres
+    // une mise a jour OTA : sans cet appel, un redemarrage inattendu avant
+    // confirmation reviendrait sur l'image precedente.
+    ota_confirm_boot_ok();
 
 #if CONFIG_ARROSAGE_ENABLE_DIAG_CONSOLE
     ESP_LOGW(TAG, "Mode diagnostic active (console REPL UART) - voir docs/bring_up_checklist.md");
