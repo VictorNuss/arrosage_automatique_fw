@@ -15,6 +15,35 @@ menu "Arrosage Firmware Configuration"
         string "Mot de passe WiFi"
         default "mypassword"
 
+    config ARROSAGE_WIFI_STATIC_IP
+        string "Adresse IP fixe du device"
+        default "192.168.1.50"
+        help
+            Le device n'utilise pas le DHCP : cette IP est appliquee au
+            demarrage. Permet au backend/dashboard de joindre le device de
+            facon previsible (ex. pour l'OTA, voir CONFIG_ARROSAGE_ENABLE_OTA)
+            sans dependre de ce que le routeur attribuerait dynamiquement.
+            A choisir en dehors de la plage DHCP du routeur pour eviter tout
+            conflit avec une autre adresse deja distribuee.
+
+    config ARROSAGE_WIFI_STATIC_NETMASK
+        string "Masque de sous-reseau"
+        default "255.255.255.0"
+
+    config ARROSAGE_WIFI_STATIC_GATEWAY
+        string "Passerelle (IP du routeur)"
+        default "192.168.1.1"
+
+    config ARROSAGE_WIFI_STATIC_DNS
+        string "Serveur DNS"
+        default "192.168.1.1"
+        help
+            Necessaire pour resoudre le serveur NTP (ARROSAGE_NTP_SERVER,
+            un nom d'hote) puisque le DHCP n'est plus utilise pour fournir un
+            DNS automatiquement. La plupart des routeurs domestiques font
+            aussi office de resolveur DNS : leur IP (= la passerelle,
+            generalement) convient dans la majorite des cas.
+
     config ARROSAGE_MQTT_BROKER_URI
         string "URI du broker MQTT (ex: mqtt://192.168.1.10:1883)"
         default "mqtt://192.168.1.10:1883"

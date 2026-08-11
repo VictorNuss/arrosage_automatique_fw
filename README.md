@@ -58,6 +58,7 @@ Section **"Arrosage Firmware Configuration"** (voir
 |---|---|---|
 | `CONFIG_ARROSAGE_DEVICE_ID` | Identifiant fixe du device, utilisé dans les topics MQTT (`arrosage/<device_id>/...`) et comme `client_id` MQTT | `arrosage-01` |
 | `CONFIG_ARROSAGE_WIFI_SSID` / `..._WIFI_PASSWORD` | Identifiants WiFi | `myssid` / `mypassword` |
+| `CONFIG_ARROSAGE_WIFI_STATIC_IP` / `..._NETMASK` / `..._GATEWAY` / `..._DNS` | IP fixe du device (pas de DHCP) — à choisir hors de la plage DHCP du routeur | `192.168.1.50` / `255.255.255.0` / `192.168.1.1` / `192.168.1.1` |
 | `CONFIG_ARROSAGE_MQTT_BROKER_URI` | URI du broker Mosquitto local (pas de TLS) | `mqtt://192.168.1.10:1883` |
 | `CONFIG_ARROSAGE_NTP_SERVER` | Serveur NTP pour l'horodatage `ts` | `pool.ntp.org` |
 | `CONFIG_ARROSAGE_STATE_PUBLISH_INTERVAL_S` | Intervalle de publication de l'état | `60` |
@@ -158,8 +159,10 @@ reste du firmware :
   commande (`docs/mqtt_contract.md`) ; la commande passe par le même parseur
   et la même queue que celles reçues via MQTT.
 
-L'IP du device apparaît dans les logs série (`idf.py monitor`) après
-connexion WiFi, ou dans la liste des clients de la box/routeur.
+L'IP du device est fixe (voir `CONFIG_ARROSAGE_WIFI_STATIC_IP` ci-dessus,
+section 3) — pas besoin de la chercher dans les logs ou sur le routeur à
+chaque redémarrage ; c'est aussi ce qui permet à un backend/dashboard de
+joindre le device de façon prévisible (utile pour l'OTA, voir section 7).
 
 ## 7. Mise à jour du firmware par WiFi (OTA)
 

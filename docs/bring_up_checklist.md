@@ -70,8 +70,12 @@ extremes (0% / 100%) ne sont pas atteintes.
 ## 6. WiFi seul
 
 Desactiver le mode diagnostic (`ARROSAGE_ENABLE_DIAG_CONSOLE=n`), configurer
-SSID/mot de passe via `idf.py menuconfig`, flasher, verifier dans les logs
-(`idf.py monitor`) l'obtention d'une IP.
+SSID/mot de passe via `idf.py menuconfig`, verifier/adapter l'IP fixe
+(`ARROSAGE_WIFI_STATIC_IP` et associes - **choisir une IP hors de la plage
+DHCP du routeur** pour eviter tout conflit avec un autre appareil), flasher,
+verifier dans les logs (`idf.py monitor`) l'obtention de cette IP exacte
+("IP obtenue : ..."). Verifier aussi que le device reste bien joignable
+(`ping <ip_fixe>`) apres un redemarrage.
 
 ## 7. Serveur web de test
 
