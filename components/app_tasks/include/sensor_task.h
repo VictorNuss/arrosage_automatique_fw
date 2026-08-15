@@ -18,3 +18,15 @@
  * @note A appeler apres net_wifi_init(), net_mqtt_init() et net_time_sync_init().
  */
 void sensor_task_start(void);
+
+/**
+ * @ingroup app_tasks
+ * @brief Publie l'etat immediatement, hors cycle periodique.
+ *
+ * A appeler apres un changement d'etat de vanne (commande MQTT traitee avec
+ * succes) pour que le dashboard voie le changement sans attendre jusqu'a
+ * `ARROSAGE_STATE_PUBLISH_INTERVAL_S`. Le cycle periodique reste actif en
+ * filet de securite (republication meme sans commande, ex. apres une perte
+ * MQTT transitoire).
+ */
+void sensor_task_publish_now(void);

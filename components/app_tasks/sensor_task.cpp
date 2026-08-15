@@ -54,3 +54,8 @@ void sensor_task_start(void)
 {
     xTaskCreate(&sensor_task_run, "sensor_task", kTaskStackSize, nullptr, kTaskPriority, nullptr);
 }
+
+void sensor_task_publish_now(void)
+{
+    publish_state();
+}
