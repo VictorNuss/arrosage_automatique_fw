@@ -59,6 +59,16 @@ void valve_manager_close_all(void);
 
 /**
  * @ingroup valve
+ * @brief Republie l'etat courant de toutes les vannes sur la queue MQTT evenementielle.
+ *
+ * A appeler en reponse a une commande `get_status` (voir CommandType::GetStatus) :
+ * l'etat d'une vanne est toujours connu (pas d'ambiguite "jamais lue" comme
+ * pour un capteur), donc toutes les vannes sont republiees sans exception.
+ */
+void valve_manager_publish_all(void);
+
+/**
+ * @ingroup valve
  * @brief Recherche l'index d'une vanne par sa cle du contrat MQTT (ex "vanne_1").
  * @param mqtt_key Cle du contrat MQTT
  * @return L'index correspondant, ou -1 si aucune vanne ne correspond

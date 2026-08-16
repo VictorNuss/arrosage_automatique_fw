@@ -54,12 +54,6 @@ menu "Arrosage Firmware Configuration"
         string "Serveur NTP"
         default "pool.ntp.org"
 
-    config ARROSAGE_STATE_PUBLISH_INTERVAL_S
-        int "Intervalle de publication de l'etat (secondes)"
-        default 60
-        help
-            Doit rester proche de 60s pour respecter le contrat MQTT etat.
-
     config ARROSAGE_TANK_HEIGHT_CM
         int "Hauteur totale de la cuve (cm), du capteur ultrason au fond"
         default 100

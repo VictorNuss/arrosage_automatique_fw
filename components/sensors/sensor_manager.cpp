@@ -7,6 +7,7 @@
 
 #include "battery_placeholder_sensor.h"
 #include "ds18b20_temperature_sensor.h"
+#include "mqtt_event.h"
 #include "sensor.h"
 #include "sensor_logic.h"
 #include "soil_humidity_sensor.h"
@@ -52,6 +53,11 @@ constexpr size_t kSensorCount = sizeof(s_sensors) / sizeof(s_sensors[0]);
 
 float s_last_good[kSensorCount] = {0};
 int64_t s_last_read_us[kSensorCount] = {0};
+// Distingue "jamais lu avec succes" de "derniere valeur connue vaut 0" -
+// necessaire pour ne jamais pousser de donnee bidon sur MQTT (ni au premier
+// cycle, ni en reponse a un get_status), contrairement a l'ancien
+// comportement qui republiait 0.0 par defaut.
+bool s_has_value[kSensorCount] = {false};
 
 // Protege s_last_good[]/s_last_read_us[] ET l'acces materiel des capteurs
 // (bit-bang GPIO ultrason/DS18B20) : sensor_manager_collect() est appelee a
@@ -91,13 +97,39 @@ void sensor_manager_collect(cJSON* root)
             if (err == ESP_OK) {
                 s_last_good[i] = value;
                 s_last_read_us[i] = now_us;
+                s_has_value[i] = true;
+                if (!mqtt_event_push_sensor_reading(sensor->key(), value)) {
+                    ESP_LOGW(TAG, "Queue MQTT pleine, lecture de '%s' perdue", sensor->key());
+                }
             } else {
                 ESP_LOGW(TAG, "Lecture capteur '%s' echouee (%s), republication de la derniere valeur connue",
                          sensor->key(), esp_err_to_name(err));
             }
         }
 
-        cJSON_AddNumberToObject(root, sensor->key(), s_last_good[i]);
+        // Reserve a la page web de test (voir state_json.cpp) : elle affiche
+        // un snapshot complet immediat, y compris 0.0 par defaut avant la
+        // premiere lecture reussie. Le flux MQTT evenementiel ci-dessus, lui,
+        // ne republie jamais cette valeur bidon.
+        if (root != nullptr) {
+            cJSON_AddNumberToObject(root, sensor->key(), s_last_good[i]);
+        }
+    }
+
+    xSemaphoreGive(s_mutex);
+}
+
+void sensor_manager_publish_last_known(void)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+
+    for (size_t i = 0; i < kSensorCount; i++) {
+        if (!s_has_value[i]) {
+            continue;  // jamais lu avec succes : rien de reel a republier
+        }
+        if (!mqtt_event_push_sensor_reading(s_sensors[i].sensor->key(), s_last_good[i])) {
+            ESP_LOGW(TAG, "Queue MQTT pleine, republication de '%s' (get_status) perdue", s_sensors[i].sensor->key());
+        }
     }
 
     xSemaphoreGive(s_mutex);

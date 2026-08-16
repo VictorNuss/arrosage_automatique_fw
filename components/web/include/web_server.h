@@ -18,7 +18,7 @@
  * | Route | Description |
  * |---|---|
  * | `GET /` | Page HTML de test (etat courant + controle des vannes) |
- * | `GET /api/state` | JSON d'etat - exactement le meme format que le contrat MQTT `arrosage/<device_id>/etat` (voir state_json_build()) |
+ * | `GET /api/state` | Snapshot JSON complet de test (voir state_json_build()) - ne correspond plus au format MQTT evenementiel, voir docs/mqtt_contract.md |
  * | `POST /api/command` | JSON de commande - exactement le meme format que le contrat MQTT `arrosage/<device_id>/commande` (voir command_parse()) |
  *
  * La commande recue est deposee dans la meme command_queue que celle

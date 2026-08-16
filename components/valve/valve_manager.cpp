@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include "mqtt_event.h"
 #include "valve_config.h"
 #include "valve_logic.h"
 
@@ -46,6 +47,10 @@ void auto_close_timer_cb(void* arg)
     gpio_set_level(VALVE_CONFIGS[idx].pin, 0);
     s_runtime[idx].is_open = false;
     xSemaphoreGive(s_mutex);
+
+    if (!mqtt_event_push_valve_state(VALVE_CONFIGS[idx].mqtt_key, false)) {
+        ESP_LOGW(TAG, "Queue MQTT pleine, evenement de fermeture automatique de %s perdu", VALVE_CONFIGS[idx].mqtt_key);
+    }
 
     ESP_LOGI(TAG, "%s (%s) fermee automatiquement (fin de duree)", VALVE_CONFIGS[idx].name,
              VALVE_CONFIGS[idx].mqtt_key);
@@ -118,6 +123,10 @@ bool valve_manager_open(int idx, uint32_t duration_s)
         return false;
     }
 
+    if (!mqtt_event_push_valve_state(cfg.mqtt_key, true)) {
+        ESP_LOGW(TAG, "Queue MQTT pleine, evenement d'ouverture de %s perdu", cfg.mqtt_key);
+    }
+
     ESP_LOGI(TAG, "%s (%s) ouverte pour %u s", cfg.name, cfg.mqtt_key, (unsigned)clamped);
     return true;
 }
@@ -138,6 +147,10 @@ bool valve_manager_close(int idx)
 
     xSemaphoreGive(s_mutex);
 
+    if (!mqtt_event_push_valve_state(cfg.mqtt_key, false)) {
+        ESP_LOGW(TAG, "Queue MQTT pleine, evenement de fermeture de %s perdu", cfg.mqtt_key);
+    }
+
     ESP_LOGI(TAG, "%s (%s) fermee", cfg.name, cfg.mqtt_key);
     return true;
 }
@@ -146,6 +159,15 @@ void valve_manager_close_all(void)
 {
     for (size_t i = 0; i < VALVE_CONFIG_COUNT; i++) {
         valve_manager_close((int)i);
+    }
+}
+
+void valve_manager_publish_all(void)
+{
+    for (size_t i = 0; i < VALVE_CONFIG_COUNT; i++) {
+        if (!mqtt_event_push_valve_state(VALVE_CONFIGS[i].mqtt_key, valve_manager_is_open((int)i))) {
+            ESP_LOGW(TAG, "Queue MQTT pleine, republication de %s (get_status) perdue", VALVE_CONFIGS[i].mqtt_key);
+        }
     }
 }
 

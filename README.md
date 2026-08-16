@@ -60,8 +60,7 @@ Section **"Arrosage Firmware Configuration"** (voir
 | `CONFIG_ARROSAGE_WIFI_SSID` / `..._WIFI_PASSWORD` | Identifiants WiFi | `myssid` / `mypassword` |
 | `CONFIG_ARROSAGE_WIFI_STATIC_IP` / `..._NETMASK` / `..._GATEWAY` / `..._DNS` | IP fixe du device (pas de DHCP) — à choisir hors de la plage DHCP du routeur | `192.168.1.50` / `255.255.255.0` / `192.168.1.1` / `192.168.1.1` |
 | `CONFIG_ARROSAGE_MQTT_BROKER_URI` | URI du broker Mosquitto local (pas de TLS) | `mqtt://192.168.1.10:1883` |
-| `CONFIG_ARROSAGE_NTP_SERVER` | Serveur NTP pour l'horodatage `ts` | `pool.ntp.org` |
-| `CONFIG_ARROSAGE_STATE_PUBLISH_INTERVAL_S` | Intervalle de publication de l'état | `60` |
+| `CONFIG_ARROSAGE_NTP_SERVER` | Serveur NTP pour l'horodatage `ts` de la page de test locale (`/api/state`) | `pool.ntp.org` |
 | `CONFIG_ARROSAGE_TANK_HEIGHT_CM` | Hauteur de la cuve (calibration du capteur ultrason) | `100` |
 | `CONFIG_ARROSAGE_ENABLE_DIAG_CONSOLE` | Active la console de diagnostic REPL au lieu du mode normal | `n` |
 | *(sous-menu "Broches (GPIO / ADC)")* `ARROSAGE_VALVE1/2/3_GPIO` | GPIO des relais vannes 1/2/3 | `25` / `26` / `27` |
@@ -95,8 +94,9 @@ components/
   sensors/               interface Sensor + drivers (ultrason, ADC sol, DS18B20, placeholder batterie)
   command/               parsing JSON du topic commande (pur, testable sur l'hote)
   net/                    WiFi, SNTP, client MQTT
-  app_tasks/              command_task, sensor_task, state_json (JSON d'etat partage), console de diagnostic
-  web/                    serveur HTTP local de test (page + API JSON, meme format que le contrat MQTT)
+  mqtt_event/             queue partagee des evenements a publier (capteurs/vannes), sans dependance reseau
+  app_tasks/              command_task, sensor_poll_task, mqtt_publish_task, state_json (snapshot pour la page de test), console de diagnostic
+  web/                    serveur HTTP local de test (page + API JSON - snapshot complet, distinct du format MQTT evenementiel)
   ota/                    ecriture de la partition OTA inactive + rollback de securite (voir §7)
 test/
   main/                  tests Unity (target idf.py "linux", sans materiel)

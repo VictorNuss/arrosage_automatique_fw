@@ -17,8 +17,22 @@ const char* TAG = "net_mqtt";
 esp_mqtt_client_handle_t s_client = nullptr;
 QueueHandle_t s_command_queue = nullptr;
 bool s_started = false;
-char s_topic_etat[64];
 char s_topic_commande[64];
+
+// Chaque evenement (capteur ou vanne) est publie sur son propre sous-topic
+// `arrosage/<device_id>/etat/<key>` plutot que dans un JSON combine - voir
+// docs/mqtt_contract.md. Construit a la volee (pas de cache par cle, le
+// nombre de cles distinctes est faible et ces appels ne sont pas hot-path).
+bool publish_event(const char* key, const char* json_payload)
+{
+    if (!(xEventGroupGetBits(net_events_group()) & NET_MQTT_CONNECTED_BIT)) {
+        return false;
+    }
+    char topic[80];
+    snprintf(topic, sizeof(topic), "arrosage/%s/etat/%s", CONFIG_ARROSAGE_DEVICE_ID, key);
+    int msg_id = esp_mqtt_client_publish(s_client, topic, json_payload, 0, /*qos=*/1, /*retain=*/1);
+    return msg_id >= 0;
+}
 
 void mqtt_event_handler(void* /*handler_args*/, esp_event_base_t /*base*/, int32_t event_id, void* event_data)
 {
@@ -72,7 +86,6 @@ void ip_event_handler(void* /*arg*/, esp_event_base_t /*base*/, int32_t /*event_
 void net_mqtt_init(QueueHandle_t command_queue)
 {
     s_command_queue = command_queue;
-    snprintf(s_topic_etat, sizeof(s_topic_etat), "arrosage/%s/etat", CONFIG_ARROSAGE_DEVICE_ID);
     snprintf(s_topic_commande, sizeof(s_topic_commande), "arrosage/%s/commande", CONFIG_ARROSAGE_DEVICE_ID);
 
     esp_mqtt_client_config_t mqtt_cfg = {};
@@ -89,11 +102,16 @@ void net_mqtt_init(QueueHandle_t command_queue)
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &ip_event_handler, nullptr));
 }
 
-bool net_mqtt_publish_state(const char* json_payload)
+bool net_mqtt_publish_sensor_reading(const char* key, float value)
 {
-    if (!(xEventGroupGetBits(net_events_group()) & NET_MQTT_CONNECTED_BIT)) {
-        return false;
-    }
-    int msg_id = esp_mqtt_client_publish(s_client, s_topic_etat, json_payload, 0, /*qos=*/1, /*retain=*/1);
-    return msg_id >= 0;
+    char payload[64];
+    snprintf(payload, sizeof(payload), "{\"value\":%.3f}", (double)value);
+    return publish_event(key, payload);
+}
+
+bool net_mqtt_publish_valve_state(const char* key, bool is_open)
+{
+    char payload[32];
+    snprintf(payload, sizeof(payload), "{\"state\":\"%s\"}", is_open ? "open" : "closed");
+    return publish_event(key, payload);
 }

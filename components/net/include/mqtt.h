@@ -24,8 +24,18 @@ void net_mqtt_init(QueueHandle_t command_queue);
 
 /**
  * @ingroup net
- * @brief Publie le JSON d'etat sur `arrosage/<device_id>/etat` (QoS 1, retain=true).
- * @param json_payload Payload JSON deja serialise
+ * @brief Publie une lecture capteur sur `arrosage/<device_id>/etat/<key>` (QoS 1, retain=true).
+ * @param key Cle du contrat MQTT (ex "water_level_cm")
+ * @param value Valeur mesuree
  * @return false sans rien publier si le client n'est pas connecte
  */
-bool net_mqtt_publish_state(const char* json_payload);
+bool net_mqtt_publish_sensor_reading(const char* key, float value);
+
+/**
+ * @ingroup net
+ * @brief Publie l'etat d'une vanne sur `arrosage/<device_id>/etat/<key>` (QoS 1, retain=true).
+ * @param key Cle du contrat MQTT (ex "vanne_1")
+ * @param is_open Etat courant de la vanne
+ * @return false sans rien publier si le client n'est pas connecte
+ */
+bool net_mqtt_publish_valve_state(const char* key, bool is_open);

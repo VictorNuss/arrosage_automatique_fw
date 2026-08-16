@@ -3,7 +3,7 @@
 #include "esp_log.h"
 
 #include "command.h"
-#include "sensor_task.h"
+#include "sensor_manager.h"
 #include "valve_manager.h"
 
 namespace {
@@ -27,9 +27,7 @@ void command_task_run(void* arg)
             case CommandType::OpenValve: {
                 int idx = valve_manager_find_by_key(cmd.valve_key);
                 if (idx >= 0) {
-                    if (valve_manager_open(idx, cmd.duration_s)) {
-                        sensor_task_publish_now();
-                    }
+                    valve_manager_open(idx, cmd.duration_s);
                 } else {
                     ESP_LOGW(TAG, "Commande open: vanne inconnue '%s'", cmd.valve_key);
                 }
@@ -38,9 +36,7 @@ void command_task_run(void* arg)
             case CommandType::CloseValve: {
                 int idx = valve_manager_find_by_key(cmd.valve_key);
                 if (idx >= 0) {
-                    if (valve_manager_close(idx)) {
-                        sensor_task_publish_now();
-                    }
+                    valve_manager_close(idx);
                 } else {
                     ESP_LOGW(TAG, "Commande close: vanne inconnue '%s'", cmd.valve_key);
                 }
@@ -49,7 +45,10 @@ void command_task_run(void* arg)
             case CommandType::StopAll:
                 ESP_LOGW(TAG, "Arret d'urgence : fermeture de toutes les vannes");
                 valve_manager_close_all();
-                sensor_task_publish_now();
+                break;
+            case CommandType::GetStatus:
+                valve_manager_publish_all();
+                sensor_manager_publish_last_known();
                 break;
             case CommandType::Invalid:
             default:

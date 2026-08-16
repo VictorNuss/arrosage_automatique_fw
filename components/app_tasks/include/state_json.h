@@ -3,17 +3,19 @@
 /**
  * @file state_json.h
  * @ingroup app_tasks
- * @brief Construction du JSON d'etat, partagee entre MQTT et le serveur web de test.
+ * @brief Construction du snapshot JSON complet pour le serveur web de test.
  */
 
 /**
  * @ingroup app_tasks
- * @brief Construit le JSON d'etat (meme format que le contrat MQTT `arrosage/<device_id>/etat`).
+ * @brief Construit un snapshot JSON complet (horodatage, capteurs, vannes).
  *
- * Assemble l'horodatage, les mesures des capteurs et l'etat des vannes.
- * Partagee entre sensor_task (publication MQTT) et web_server (page de
- * test locale), pour garantir que les deux affichent exactement la meme
- * chose.
+ * Utilise uniquement par web_server (`GET /api/state`, page de test locale)
+ * pour afficher un etat complet immediat. Ne correspond plus au format du
+ * contrat MQTT `arrosage/<device_id>/etat/<key>` (evenementiel, un message
+ * par cle - voir docs/mqtt_contract.md) : conserve 0.0 par defaut avant la
+ * premiere lecture reussie d'un capteur, la ou le flux MQTT ne publie
+ * jamais de valeur bidon.
  *
  * @return Une chaine allouee par cJSON (a liberer avec cJSON_free()), ou
  * nullptr en cas d'echec d'allocation
