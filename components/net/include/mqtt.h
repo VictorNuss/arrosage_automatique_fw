@@ -35,7 +35,7 @@ bool net_mqtt_publish_sensor_reading(const char* key, float value);
  * @ingroup net
  * @brief Publie l'etat d'une vanne sur `arrosage/<device_id>/etat/<key>` (QoS 1, retain=true).
  * @param key Cle du contrat MQTT (ex "vanne_1")
- * @param is_open Etat courant de la vanne
+ * @param state Etat courant : "open", "closed" ou "transitioning"
  * @return false sans rien publier si le client n'est pas connecte
  */
-bool net_mqtt_publish_valve_state(const char* key, bool is_open);
+bool net_mqtt_publish_valve_state(const char* key, const char* state);

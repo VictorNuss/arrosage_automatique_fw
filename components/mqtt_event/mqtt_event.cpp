@@ -34,11 +34,11 @@ bool mqtt_event_push_sensor_reading(const char* key, float value)
     return xQueueSend(s_queue, &msg, 0) == pdTRUE;
 }
 
-bool mqtt_event_push_valve_state(const char* key, bool is_open)
+bool mqtt_event_push_valve_state(const char* key, const char* state)
 {
     MqttMessage msg{};
     msg.type = MqttMessageType::ValveState;
     std::strncpy(msg.key, key, sizeof(msg.key) - 1);
-    msg.is_open = is_open;
+    msg.valve_state = state;
     return xQueueSend(s_queue, &msg, 0) == pdTRUE;
 }

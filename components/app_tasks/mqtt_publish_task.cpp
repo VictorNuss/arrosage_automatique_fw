@@ -29,7 +29,7 @@ void mqtt_publish_task_run(void* /*arg*/)
                 published = net_mqtt_publish_sensor_reading(msg.key, msg.numeric_value);
                 break;
             case MqttMessageType::ValveState:
-                published = net_mqtt_publish_valve_state(msg.key, msg.is_open);
+                published = net_mqtt_publish_valve_state(msg.key, msg.valve_state);
                 break;
             default:
                 published = false;

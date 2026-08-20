@@ -30,8 +30,8 @@ struct MqttMessage {
     MqttMessageType type;
     char key[24]; /**< Cle du contrat MQTT (ex "water_level_cm", "vanne_1") */
     union {
-        float numeric_value; /**< Valide si type == SensorReading */
-        bool is_open;         /**< Valide si type == ValveState */
+        float numeric_value;    /**< Valide si type == SensorReading */
+        const char* valve_state; /**< Valide si type == ValveState : "open"|"closed"|"transitioning" (litteral statique) */
     };
 };
 
@@ -59,6 +59,7 @@ bool mqtt_event_push_sensor_reading(const char* key, float value);
 /**
  * @ingroup mqtt_event
  * @brief Pousse un evenement de changement d'etat vanne (non bloquant).
+ * @param state Litteral statique parmi "open", "closed", "transitioning" (duree de vie programme, pas copie)
  * @return false si la queue est pleine (evenement perdu ; a loguer par l'appelant)
  */
-bool mqtt_event_push_valve_state(const char* key, bool is_open);
+bool mqtt_event_push_valve_state(const char* key, const char* state);

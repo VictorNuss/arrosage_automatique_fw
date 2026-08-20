@@ -109,9 +109,9 @@ bool net_mqtt_publish_sensor_reading(const char* key, float value)
     return publish_event(key, payload);
 }
 
-bool net_mqtt_publish_valve_state(const char* key, bool is_open)
+bool net_mqtt_publish_valve_state(const char* key, const char* state)
 {
-    char payload[32];
-    snprintf(payload, sizeof(payload), "{\"state\":\"%s\"}", is_open ? "open" : "closed");
+    char payload[40];
+    snprintf(payload, sizeof(payload), "{\"state\":\"%s\"}", state);
     return publish_event(key, payload);
 }

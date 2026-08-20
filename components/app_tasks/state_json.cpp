@@ -17,7 +17,7 @@ char* state_json_build(void)
     sensor_manager_collect(root);
 
     for (size_t i = 0; i < VALVE_COUNT; i++) {
-        cJSON_AddStringToObject(root, valve_manager_mqtt_key((int)i), valve_manager_is_open((int)i) ? "open" : "closed");
+        cJSON_AddStringToObject(root, valve_manager_mqtt_key((int)i), valve_manager_state_string((int)i));
     }
 
     char* payload = cJSON_PrintUnformatted(root);

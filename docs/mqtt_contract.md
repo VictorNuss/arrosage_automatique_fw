@@ -23,9 +23,20 @@ Un topic par cle du contrat (`water_level_cm`, `humidity_pct`,
 - Capteur : a chaque lecture materielle reussie (voir
   `sensor_manager_collect()`) - jamais en cas d'echec de lecture, jamais de
   valeur par defaut avant la premiere lecture reussie.
-- Vanne : a chaque changement d'etat reel (commande `open`/`close` executee
-  avec succes, fermeture automatique en fin de duree) - voir
-  `components/valve/valve_manager.cpp`.
+- Vanne : machine a 3 etats (`open` | `closed` | `transitioning`) - voir
+  `components/valve/valve_manager.cpp`. Une commande `open`/`close` fait
+  basculer le GPIO immediatement mais publie d'abord `transitioning`,
+  pendant `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S` secondes (15s par
+  defaut, `idf.py menuconfig`) : le temps que le condensateur de demarrage
+  de la vanne motorisee permette au moteur d'actionner reellement le
+  passage d'eau, dans un sens comme dans l'autre - annoncer `open`/`closed`
+  plus tot serait faux. Une fois ce delai ecoule, `open` ou `closed` est
+  publie selon la direction demandee. Fermeture automatique en fin de
+  duree : meme mecanisme (passe par `transitioning` avant `closed`). A
+  garder en tete cote backend/dashboard : ne pas considerer une commande
+  comme en echec si la confirmation finale n'arrive pas avant
+  `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S`, et traiter `transitioning`
+  comme un etat normal (pas une erreur).
 
 QoS 1, **retain=true** sur chaque sous-topic (un abonnement a
 `arrosage/<device_id>/etat/#` recoit donc immediatement la derniere valeur
@@ -39,6 +50,7 @@ Payload vanne :
 ```json
 {"state": "open"}
 ```
+(`state` vaut `"open"`, `"closed"` ou `"transitioning"`.)
 
 Notes d'implementation :
 - Pas de champ `ts` dans le payload : l'horodatage MQTT natif du message (ou

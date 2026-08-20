@@ -62,6 +62,18 @@ menu "Arrosage Firmware Configuration"
             ultrason en niveau d'eau (water_level_cm = hauteur - distance).
             A calibrer selon le montage physique reel de chaque installation.
 
+    config ARROSAGE_VALVE_TRANSITION_DELAY_S
+        int "Delai de transition d'une vanne (secondes)"
+        default 15
+        help
+            Les electrovannes utilisees sont motorisees avec un condensateur
+            de demarrage : ni l'ouverture ni la fermeture ne sont instantanees,
+            le moteur met ce temps a actionner reellement le passage d'eau.
+            Pendant ce delai, l'etat publie (MQTT et page de test) est
+            "transitioning" plutot que "open"/"closed" - annoncer l'etat
+            cible plus tot serait faux. Meme delai pour l'ouverture et la
+            fermeture, uniforme pour toutes les vannes.
+
     config ARROSAGE_ENABLE_DIAG_CONSOLE
         bool "Activer la console de diagnostic (REPL UART) au demarrage"
         default n
