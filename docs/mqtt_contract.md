@@ -2,37 +2,60 @@
 
 Le broker est un Mosquitto local, sans TLS, acces anonyme.
 
-## Topic etat (device -> serveur) — FIGE, ne pas devier
+## Topic etat (device -> serveur) — VERSION 2, evenementielle
+
+> Remplace l'ancienne version (JSON plat unique, snapshot periodique
+> complet toutes les `CONFIG_ARROSAGE_STATE_PUBLISH_INTERVAL_S`) suite a un
+> retour de terrain : le snapshot periodique obligeait a republier une
+> **valeur bidon** (0.0 ou derniere valeur connue) des qu'un capteur n'avait
+> rien de frais a rapporter, ce qui rendait le flux MQTT peu fiable. **A
+> valider avec l'equipe backend/dashboard avant mise en prod** : ce
+> changement casse la version precedente du contrat (topic et format de
+> payload differents).
 
 ```
-arrosage/<device_id>/etat
+arrosage/<device_id>/etat/<key>
 ```
 
-Publie toutes les `CONFIG_ARROSAGE_STATE_PUBLISH_INTERVAL_S` secondes (60s
-par defaut), QoS 1, **retain=true** (le dashboard voit l'etat immediatement
-a la reconnexion sans attendre jusqu'a 60s).
+Un topic par cle du contrat (`water_level_cm`, `humidity_pct`,
+`temperature_c`, `battery_v`, `vanne_1`, `vanne_2`, `vanne_3`, ...), publie
+**uniquement quand une donnee reelle et fraiche existe** :
+- Capteur : a chaque lecture materielle reussie (voir
+  `sensor_manager_collect()`) - jamais en cas d'echec de lecture, jamais de
+  valeur par defaut avant la premiere lecture reussie.
+- Vanne : machine a 3 etats (`open` | `closed` | `transitioning`) - voir
+  `components/valve/valve_manager.cpp`. Une commande `open`/`close` fait
+  basculer le GPIO immediatement mais publie d'abord `transitioning`,
+  pendant `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S` secondes (15s par
+  defaut, `idf.py menuconfig`) : le temps que le condensateur de demarrage
+  de la vanne motorisee permette au moteur d'actionner reellement le
+  passage d'eau, dans un sens comme dans l'autre - annoncer `open`/`closed`
+  plus tot serait faux. Une fois ce delai ecoule, `open` ou `closed` est
+  publie selon la direction demandee. Fermeture automatique en fin de
+  duree : meme mecanisme (passe par `transitioning` avant `closed`). A
+  garder en tete cote backend/dashboard : ne pas considerer une commande
+  comme en echec si la confirmation finale n'arrive pas avant
+  `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S`, et traiter `transitioning`
+  comme un etat normal (pas une erreur).
 
-Payload JSON plat, une cle par mesure, **toutes les cles sont toujours
-presentes** (y compris en cas d'echec de lecture d'un capteur - voir
-`sensor_manager_collect()`, qui republie alors la derniere valeur connue) :
+QoS 1, **retain=true** sur chaque sous-topic (un abonnement a
+`arrosage/<device_id>/etat/#` recoit donc immediatement la derniere valeur
+connue de chaque cle a la reconnexion, meme sans nouvel evenement).
 
+Payload capteur :
 ```json
-{
-  "ts": "2026-07-16T10:00:00Z",
-  "water_level_cm": 34.5,
-  "humidity_pct": 62.1,
-  "temperature_c": 21.3,
-  "battery_v": 3.98,
-  "vanne_1": "open",
-  "vanne_2": "closed",
-  "vanne_3": "closed"
-}
+{"value": 34.5}
 ```
+Payload vanne :
+```json
+{"state": "open"}
+```
+(`state` vaut `"open"`, `"closed"` ou `"transitioning"`.)
 
 Notes d'implementation :
-- `ts` : ISO8601 UTC, construit apres synchronisation NTP (voir
-  `components/net/time_sync.cpp`). Peut refleter l'epoque par defaut
-  (1970-01-01) si publie avant la premiere synchronisation reussie.
+- Pas de champ `ts` dans le payload : l'horodatage MQTT natif du message (ou
+  a defaut l'heure de reception cote backend) fait foi. A ajouter si le
+  backend a besoin d'un horodatage embarque explicite (a valider avec eux).
 - `water_level_cm` : calcule a partir de la distance mesuree par le capteur
   ultrason (`water_level_cm = hauteur_cuve_cm - distance_mesuree_cm`),
   clampe a `[0, hauteur_cuve_cm]`. La hauteur de cuve est configurable via
@@ -47,16 +70,33 @@ Notes d'implementation :
   `components/sensors/priv_include/soil_humidity_sensor.h`, constantes
   `kRawDry`/`kRawWet`, ajustables via le mode diagnostic).
 - `battery_v` : le device est **alimente secteur**, il n'y a pas de vraie
-  batterie. La cle reste presente (contrat oblige) mais republie une
-  constante `0.0` (voir `BatteryPlaceholderSensor`).
-- **Ambiguite connue sur la valeur par defaut avant la premiere lecture** :
-  tant qu'un capteur n'a jamais ete lu avec succes (capteur debranche/en
-  panne des le boot), `sensor_manager` republie `0.0` - une valeur qui, pour
-  `water_level_cm`, est indiscernable d'une cuve reellement vide. Le contrat
-  etant fige (une cle par mesure, pas de champ de statut additionnel), cette
-  ambiguite ne peut pas etre levee cote firmware sans le faire evoluer ; a
-  garder en tete cote backend/dashboard si une logique de securite se base
-  sur `water_level_cm == 0`.
+  batterie. Republie une constante `0.0` (voir `BatteryPlaceholderSensor`)
+  des le premier cycle, comme n'importe quel autre capteur "reussi".
+- **L'ambiguite de l'ancienne version (0.0 = jamais lu OU cuve vide) est
+  levee** : tant qu'un capteur n'a jamais ete lu avec succes, sa cle n'est
+  simplement jamais publiee (ni au demarrage, ni via `get_status`, voir plus
+  bas) plutot que de contenir une valeur bidon.
+- La page de test locale (`GET /api/state`, voir `state_json.cpp`) garde
+  l'ancien format en JSON plat complet (toutes les cles presentes, 0.0 par
+  defaut) - pratique pour un affichage immediat dans un navigateur, mais ce
+  n'est **plus** le format publie sur MQTT.
+
+### Demander un etat complet : commande `get_status`
+
+Comme le flux `etat` est purement evenementiel (aucune republication
+periodique), un backend qui redemarre (ou perd sa base d'etat) peut forcer
+une republication immediate de tout ce que le device connait en envoyant
+`{"action": "get_status"}` sur le topic `commande` (voir plus bas). Le
+device republie alors :
+- L'etat courant de **toutes** les vannes (toujours connu, jamais omis).
+- La derniere valeur connue de **chaque capteur deja lu avec succes au
+  moins une fois** - un capteur jamais lu avec succes depuis le boot reste
+  absent de la reponse (meme logique anti-valeur-bidon que ci-dessus).
+
+Le retain=true sur chaque sous-topic couvre deja la plupart des cas de
+reconnexion (le broker rejoue automatiquement la derniere valeur connue par
+cle) ; `get_status` reste utile si le backend a perdu son propre etat
+independamment du broker (ex. sa base de donnees a ete reinitialisee).
 
 ## Topic commande (serveur -> device) — proposition, a valider avec le backend
 
@@ -78,11 +118,13 @@ regles de validation exactes) :
 {"vanne": "vanne_1", "action": "open", "duration_s": 600}
 {"vanne": "vanne_2", "action": "close"}
 {"action": "stop_all"}
+{"action": "get_status"}
 ```
 
 - `vanne` : cle du contrat etat (`vanne_1`, `vanne_2`, `vanne_3`, ...) —
   **pas** le nom humain de la vanne (ex "Pelouse").
-- `action` : `"open"` | `"close"` | `"stop_all"`.
+- `action` : `"open"` | `"close"` | `"stop_all"` | `"get_status"` (voir
+  "Demander un etat complet" plus haut).
 - `duration_s` : obligatoire et strictement positif pour `"open"` — **pas de
   duree implicite par defaut** : un payload `open` sans `duration_s` valide
   est rejete plutot que de deviner une duree (un arrosage est

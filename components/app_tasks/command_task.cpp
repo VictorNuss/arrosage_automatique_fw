@@ -3,6 +3,7 @@
 #include "esp_log.h"
 
 #include "command.h"
+#include "sensor_manager.h"
 #include "valve_manager.h"
 
 namespace {
@@ -44,6 +45,10 @@ void command_task_run(void* arg)
             case CommandType::StopAll:
                 ESP_LOGW(TAG, "Arret d'urgence : fermeture de toutes les vannes");
                 valve_manager_close_all();
+                break;
+            case CommandType::GetStatus:
+                valve_manager_publish_all();
+                sensor_manager_publish_last_known();
                 break;
             case CommandType::Invalid:
             default:

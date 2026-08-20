@@ -3,8 +3,12 @@
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "command.h"
+#include "ota.h"
 #include "state_json.h"
 
 namespace {
@@ -19,7 +23,11 @@ QueueHandle_t s_command_queue = nullptr;
 // contrat MQTT. Les lignes de vannes sont generees dynamiquement a partir
 // des cles "vanne_*" de l'etat recu - fonctionne sans modification si des
 // vannes sont ajoutees a la table de config.
-const char kIndexHtml[] = R"HTML(<!doctype html>
+//
+// Decoupee en trois morceaux envoyes en chunked (voir index_get_handler) pour
+// inserer conditionnellement la section OTA sans dupliquer toute la page
+// selon CONFIG_ARROSAGE_ENABLE_OTA.
+const char kIndexHtmlHead[] = R"HTML(<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -41,7 +49,19 @@ input[type=number]{width:5rem}
 <h2>Vannes</h2>
 <table id="valves"></table>
 <p><button onclick="stopAll()">Arret d'urgence (toutes les vannes)</button></p>
-<script>
+)HTML";
+
+#if CONFIG_ARROSAGE_ENABLE_OTA
+const char kOtaSectionHtml[] = R"HTML(<h2>Mise a jour firmware (OTA)</h2>
+<p>
+  <input type="file" id="ota_file" accept=".bin">
+  <button onclick="uploadOta()">Envoyer et redemarrer</button>
+</p>
+<p id="ota_status"></p>
+)HTML";
+#endif
+
+const char kIndexHtmlTail[] = R"HTML(<script>
 async function refresh() {
   try {
     const r = await fetch('/api/state');
@@ -80,6 +100,20 @@ function closeValve(key) {
 function stopAll() {
   sendCommand({action: 'stop_all'});
 }
+async function uploadOta() {
+  const fileInput = document.getElementById('ota_file');
+  const statusEl = document.getElementById('ota_status');
+  if (!fileInput || !fileInput.files.length) { return; }
+  const file = fileInput.files[0];
+  statusEl.textContent = 'Envoi en cours (' + file.size + ' octets)...';
+  try {
+    const r = await fetch('/api/ota', {method: 'POST', body: file});
+    const text = await r.text();
+    statusEl.textContent = r.ok ? text : 'Erreur : ' + text;
+  } catch (e) {
+    statusEl.textContent = "Erreur reseau pendant l'envoi (le device a peut-etre deja redemarre)";
+  }
+}
 refresh();
 setInterval(refresh, 3000);
 </script>
@@ -90,7 +124,12 @@ setInterval(refresh, 3000);
 esp_err_t index_get_handler(httpd_req_t* req)
 {
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, kIndexHtml, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, kIndexHtmlHead, HTTPD_RESP_USE_STRLEN);
+#if CONFIG_ARROSAGE_ENABLE_OTA
+    httpd_resp_send_chunk(req, kOtaSectionHtml, HTTPD_RESP_USE_STRLEN);
+#endif
+    httpd_resp_send_chunk(req, kIndexHtmlTail, HTTPD_RESP_USE_STRLEN);
+    return httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 esp_err_t state_get_handler(httpd_req_t* req)
@@ -146,6 +185,54 @@ esp_err_t command_post_handler(httpd_req_t* req)
     return httpd_resp_sendstr(req, "OK");
 }
 
+#if CONFIG_ARROSAGE_ENABLE_OTA
+esp_err_t ota_post_handler(httpd_req_t* req)
+{
+    if (req->content_len == 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "payload absent");
+        return ESP_FAIL;
+    }
+
+    if (ota_begin(req->content_len) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                             "impossible de demarrer la mise a jour (voir logs serie)");
+        return ESP_FAIL;
+    }
+
+    char buf[1024];
+    size_t remaining = req->content_len;
+    while (remaining > 0) {
+        size_t to_read = remaining < sizeof(buf) ? remaining : sizeof(buf);
+        int received = httpd_req_recv(req, buf, to_read);
+        if (received <= 0) {
+            ota_abort();
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "lecture du corps de la requete echouee");
+            return ESP_FAIL;
+        }
+
+        if (ota_write(buf, (size_t)received) != ESP_OK) {
+            ota_abort();
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "ecriture flash echouee (voir logs serie)");
+            return ESP_FAIL;
+        }
+        remaining -= (size_t)received;
+    }
+
+    if (ota_finish() != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                             "image invalide, mise a jour annulee (voir logs serie)");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_sendstr(req, "OK, redemarrage en cours...");
+
+    // Laisse le temps a la reponse HTTP de partir avant de couper la connexion.
+    vTaskDelay(pdMS_TO_TICKS(500));
+    esp_restart();
+    return ESP_OK;  // jamais atteint
+}
+#endif
+
 }  // namespace
 
 void web_server_start(QueueHandle_t command_queue)
@@ -153,6 +240,9 @@ void web_server_start(QueueHandle_t command_queue)
     s_command_queue = command_queue;
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+#if CONFIG_ARROSAGE_ENABLE_OTA
+    config.stack_size = 8192;  // ota_post_handler utilise un buffer de 1KB sur la pile
+#endif
     httpd_handle_t server = nullptr;
 
     if (httpd_start(&server, &config) != ESP_OK) {
@@ -177,6 +267,15 @@ void web_server_start(QueueHandle_t command_queue)
     command_uri.method = HTTP_POST;
     command_uri.handler = &command_post_handler;
     httpd_register_uri_handler(server, &command_uri);
+
+#if CONFIG_ARROSAGE_ENABLE_OTA
+    httpd_uri_t ota_uri = {};
+    ota_uri.uri = "/api/ota";
+    ota_uri.method = HTTP_POST;
+    ota_uri.handler = &ota_post_handler;
+    httpd_register_uri_handler(server, &ota_uri);
+    ESP_LOGW(TAG, "OTA active : POST /api/ota permet a quiconque sur le reseau local de reflasher ce device");
+#endif
 
     ESP_LOGI(TAG, "Serveur web de test demarre sur le port %d", config.server_port);
 }

@@ -18,6 +18,7 @@ enum class CommandType {
     OpenValve,  /**< Ouvrir une vanne pour Command::duration_s secondes */
     CloseValve, /**< Fermer une vanne */
     StopAll,    /**< Arret d'urgence : fermer toutes les vannes */
+    GetStatus,  /**< Republier l'etat courant de toutes les vannes et la derniere valeur connue de chaque capteur */
 };
 
 /**

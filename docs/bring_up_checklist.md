@@ -70,8 +70,12 @@ extremes (0% / 100%) ne sont pas atteintes.
 ## 6. WiFi seul
 
 Desactiver le mode diagnostic (`ARROSAGE_ENABLE_DIAG_CONSOLE=n`), configurer
-SSID/mot de passe via `idf.py menuconfig`, flasher, verifier dans les logs
-(`idf.py monitor`) l'obtention d'une IP.
+SSID/mot de passe via `idf.py menuconfig`, verifier/adapter l'IP fixe
+(`ARROSAGE_WIFI_STATIC_IP` et associes - **choisir une IP hors de la plage
+DHCP du routeur** pour eviter tout conflit avec un autre appareil), flasher,
+verifier dans les logs (`idf.py monitor`) l'obtention de cette IP exacte
+("IP obtenue : ..."). Verifier aussi que le device reste bien joignable
+(`ping <ip_fixe>`) apres un redemarrage.
 
 ## 7. Serveur web de test
 
@@ -151,3 +155,24 @@ python test/hardware/validate_device.py <ip_du_device>
 Ne remplace pas la verification physique (etapes 2 a 5) : ce script ne
 verifie que le comportement logiciel du firmware via son serveur web de
 test, pas la realite des mesures ni des relais.
+
+## 13. OTA (mise a jour firmware par WiFi)
+
+Active par defaut (`CONFIG_ARROSAGE_ENABLE_OTA=y`) ; a sauter uniquement si
+desactive volontairement. Necessite d'avoir deja reflashe le device une fois
+avec la table de partitions OTA (voir README.md section 7, `idf.py
+erase-flash` puis `flash` initial).
+
+1. Verifier qu'un premier upload reussit et que le device redemarre sur la
+   nouvelle image :
+   ```
+   curl -X POST --data-binary @build/arrosage_fw.bin http://<ip_du_device>/api/ota
+   ```
+2. Verifier dans les logs serie que l'image demarre normalement (WiFi, MQTT,
+   pas de boot loop).
+3. Tester le rollback de securite : flasher volontairement une image qui
+   plante avant `ota_confirm_boot_ok()` (ex. ajouter temporairement un
+   `abort()` juste apres `net_events_init()` dans `app_main.cpp`), l'envoyer
+   via `/api/ota`, et verifier qu'apres le crash-boot-loop le bootloader
+   revient automatiquement sur l'image precedente (visible dans les logs de
+   boot : message de rollback) plutot que de rester bloque en boucle de crash.

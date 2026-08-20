@@ -58,6 +58,9 @@ bool command_parse(const char* json, size_t len, Command* out)
         } else if (std::strcmp(action_item->valuestring, "stop_all") == 0) {
             out->type = CommandType::StopAll;
             ok = true;
+        } else if (std::strcmp(action_item->valuestring, "get_status") == 0) {
+            out->type = CommandType::GetStatus;
+            ok = true;
         }
     }
 

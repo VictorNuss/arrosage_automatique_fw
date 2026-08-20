@@ -15,6 +15,35 @@ menu "Arrosage Firmware Configuration"
         string "Mot de passe WiFi"
         default "mypassword"
 
+    config ARROSAGE_WIFI_STATIC_IP
+        string "Adresse IP fixe du device"
+        default "192.168.1.50"
+        help
+            Le device n'utilise pas le DHCP : cette IP est appliquee au
+            demarrage. Permet au backend/dashboard de joindre le device de
+            facon previsible (ex. pour l'OTA, voir CONFIG_ARROSAGE_ENABLE_OTA)
+            sans dependre de ce que le routeur attribuerait dynamiquement.
+            A choisir en dehors de la plage DHCP du routeur pour eviter tout
+            conflit avec une autre adresse deja distribuee.
+
+    config ARROSAGE_WIFI_STATIC_NETMASK
+        string "Masque de sous-reseau"
+        default "255.255.255.0"
+
+    config ARROSAGE_WIFI_STATIC_GATEWAY
+        string "Passerelle (IP du routeur)"
+        default "192.168.1.1"
+
+    config ARROSAGE_WIFI_STATIC_DNS
+        string "Serveur DNS"
+        default "192.168.1.1"
+        help
+            Necessaire pour resoudre le serveur NTP (ARROSAGE_NTP_SERVER,
+            un nom d'hote) puisque le DHCP n'est plus utilise pour fournir un
+            DNS automatiquement. La plupart des routeurs domestiques font
+            aussi office de resolveur DNS : leur IP (= la passerelle,
+            generalement) convient dans la majorite des cas.
+
     config ARROSAGE_MQTT_BROKER_URI
         string "URI du broker MQTT (ex: mqtt://192.168.1.10:1883)"
         default "mqtt://192.168.1.10:1883"
@@ -25,12 +54,6 @@ menu "Arrosage Firmware Configuration"
         string "Serveur NTP"
         default "pool.ntp.org"
 
-    config ARROSAGE_STATE_PUBLISH_INTERVAL_S
-        int "Intervalle de publication de l'etat (secondes)"
-        default 60
-        help
-            Doit rester proche de 60s pour respecter le contrat MQTT etat.
-
     config ARROSAGE_TANK_HEIGHT_CM
         int "Hauteur totale de la cuve (cm), du capteur ultrason au fond"
         default 100
@@ -38,6 +61,18 @@ menu "Arrosage Firmware Configuration"
             Utilisee pour convertir la distance mesuree par le capteur
             ultrason en niveau d'eau (water_level_cm = hauteur - distance).
             A calibrer selon le montage physique reel de chaque installation.
+
+    config ARROSAGE_VALVE_TRANSITION_DELAY_S
+        int "Delai de transition d'une vanne (secondes)"
+        default 15
+        help
+            Les electrovannes utilisees sont motorisees avec un condensateur
+            de demarrage : ni l'ouverture ni la fermeture ne sont instantanees,
+            le moteur met ce temps a actionner reellement le passage d'eau.
+            Pendant ce delai, l'etat publie (MQTT et page de test) est
+            "transitioning" plutot que "open"/"closed" - annoncer l'etat
+            cible plus tot serait faux. Meme delai pour l'ouverture et la
+            fermeture, uniforme pour toutes les vannes.
 
     config ARROSAGE_ENABLE_DIAG_CONSOLE
         bool "Activer la console de diagnostic (REPL UART) au demarrage"
@@ -95,5 +130,27 @@ menu "Arrosage Firmware Configuration"
             valider le firmware avant de brancher le vrai serveur. HTTP
             simple, sans authentification - reseau local de confiance
             uniquement (meme modele que le broker Mosquitto anonyme).
+
+    config ARROSAGE_ENABLE_OTA
+        bool "Activer la mise a jour du firmware par WiFi (OTA, POST /api/ota)"
+        depends on ARROSAGE_ENABLE_WEB_SERVER
+        default y
+        help
+            Ajoute un endpoint POST /api/ota au serveur web de test,
+            permettant d'envoyer un nouveau firmware (.bin) depuis la page
+            web ou via curl, sans passer par USB. Active par defaut, au
+            meme titre que le reste du serveur web (lecture d'etat,
+            pilotage des vannes) - meme modele de confiance ("reseau local
+            de confiance uniquement"). A la difference des autres fonctions
+            du serveur toutefois, une mise a jour de firmware acceptee sans
+            authentification equivaut a une prise de controle totale du
+            device par quiconque sur le reseau local : desactiver cette
+            option si le reseau n'est pas de confiance.
+
+            Necessite une table de partitions compatible OTA (voir
+            sdkconfig.defaults, CONFIG_PARTITION_TABLE_TWO_OTA) : un device
+            deja flashe avec l'ancienne table "single app" doit etre
+            entierement reflashe une fois (idf.py erase-flash puis idf.py
+            flash) avant de pouvoir utiliser cette fonctionnalite.
 
 endmenu

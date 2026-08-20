@@ -55,3 +55,13 @@
  * @defgroup web Serveur web de test
  * @brief Page de test locale + API JSON, meme format que le contrat MQTT.
  */
+
+/**
+ * @defgroup ota Mise a jour OTA
+ * @brief Ecriture de la partition OTA inactive et rollback de securite.
+ *
+ * Consommee par components/web (POST /api/ota) mais independante du
+ * transport : n'importe quel flux de donnees externe pourrait l'utiliser.
+ * Necessite CONFIG_PARTITION_TABLE_TWO_OTA - incompatible avec un device
+ * deja flashe avec l'ancienne table "single app" sans reflash complet.
+ */

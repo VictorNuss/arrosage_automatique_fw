@@ -175,3 +175,11 @@ TEST_CASE("vanne vide (chaine vide) est invalide", "[command_parser]")
     const char* json = "{\"vanne\":\"\",\"action\":\"close\"}";
     TEST_ASSERT_FALSE(command_parse(json, strlen(json), &cmd));
 }
+
+TEST_CASE("get_status valide, ignore vanne/duration_s superflus", "[command_parser]")
+{
+    Command cmd;
+    const char* json = "{\"action\":\"get_status\",\"vanne\":\"vanne_1\",\"duration_s\":10}";
+    TEST_ASSERT_TRUE(command_parse(json, strlen(json), &cmd));
+    TEST_ASSERT_TRUE(cmd.type == CommandType::GetStatus);
+}

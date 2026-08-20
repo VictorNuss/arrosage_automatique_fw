@@ -2,8 +2,19 @@
 CONFIG_IDF_TARGET="esp32"
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
-# Pas d'OTA pour l'instant : table de partitions simple (factory app + NVS)
-CONFIG_PARTITION_TABLE_SINGLE_APP=y
+# Table de partitions avec support OTA : factory + ota_0 + ota_1 (1MB chacune,
+# necessite 4MB de flash - deja le cas). ATTENTION : ce changement de table de
+# partitions n'est pas compatible avec un device deja flashe avec l'ancienne
+# table "single app" - un reflash complet est necessaire une seule fois
+# (idf.py erase-flash puis idf.py flash), voir README.md section OTA.
+CONFIG_PARTITION_TABLE_TWO_OTA=y
+
+# Rollback automatique : si la nouvelle image flashee en OTA ne confirme pas
+# son bon fonctionnement (ota_confirm_boot_ok(), voir components/ota) avant
+# un redemarrage inattendu, le bootloader revient automatiquement sur
+# l'image precedente au prochain boot plutot que de rester bloque sur une
+# image defectueuse.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
 

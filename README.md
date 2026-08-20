@@ -58,9 +58,9 @@ Section **"Arrosage Firmware Configuration"** (voir
 |---|---|---|
 | `CONFIG_ARROSAGE_DEVICE_ID` | Identifiant fixe du device, utilisé dans les topics MQTT (`arrosage/<device_id>/...`) et comme `client_id` MQTT | `arrosage-01` |
 | `CONFIG_ARROSAGE_WIFI_SSID` / `..._WIFI_PASSWORD` | Identifiants WiFi | `myssid` / `mypassword` |
+| `CONFIG_ARROSAGE_WIFI_STATIC_IP` / `..._NETMASK` / `..._GATEWAY` / `..._DNS` | IP fixe du device (pas de DHCP) — à choisir hors de la plage DHCP du routeur | `192.168.1.50` / `255.255.255.0` / `192.168.1.1` / `192.168.1.1` |
 | `CONFIG_ARROSAGE_MQTT_BROKER_URI` | URI du broker Mosquitto local (pas de TLS) | `mqtt://192.168.1.10:1883` |
-| `CONFIG_ARROSAGE_NTP_SERVER` | Serveur NTP pour l'horodatage `ts` | `pool.ntp.org` |
-| `CONFIG_ARROSAGE_STATE_PUBLISH_INTERVAL_S` | Intervalle de publication de l'état | `60` |
+| `CONFIG_ARROSAGE_NTP_SERVER` | Serveur NTP pour l'horodatage `ts` de la page de test locale (`/api/state`) | `pool.ntp.org` |
 | `CONFIG_ARROSAGE_TANK_HEIGHT_CM` | Hauteur de la cuve (calibration du capteur ultrason) | `100` |
 | `CONFIG_ARROSAGE_ENABLE_DIAG_CONSOLE` | Active la console de diagnostic REPL au lieu du mode normal | `n` |
 | *(sous-menu "Broches (GPIO / ADC)")* `ARROSAGE_VALVE1/2/3_GPIO` | GPIO des relais vannes 1/2/3 | `25` / `26` / `27` |
@@ -94,8 +94,10 @@ components/
   sensors/               interface Sensor + drivers (ultrason, ADC sol, DS18B20, placeholder batterie)
   command/               parsing JSON du topic commande (pur, testable sur l'hote)
   net/                    WiFi, SNTP, client MQTT
-  app_tasks/              command_task, sensor_task, state_json (JSON d'etat partage), console de diagnostic
-  web/                    serveur HTTP local de test (page + API JSON, meme format que le contrat MQTT)
+  mqtt_event/             queue partagee des evenements a publier (capteurs/vannes), sans dependance reseau
+  app_tasks/              command_task, sensor_poll_task, mqtt_publish_task, state_json (snapshot pour la page de test), console de diagnostic
+  web/                    serveur HTTP local de test (page + API JSON - snapshot complet, distinct du format MQTT evenementiel)
+  ota/                    ecriture de la partition OTA inactive + rollback de securite (voir §7)
 test/
   main/                  tests Unity (target idf.py "linux", sans materiel)
   hardware/               script Python de validation contre un device reel (voir §6)
@@ -157,10 +159,62 @@ reste du firmware :
   commande (`docs/mqtt_contract.md`) ; la commande passe par le même parseur
   et la même queue que celles reçues via MQTT.
 
-L'IP du device apparaît dans les logs série (`idf.py monitor`) après
-connexion WiFi, ou dans la liste des clients de la box/routeur.
+L'IP du device est fixe (voir `CONFIG_ARROSAGE_WIFI_STATIC_IP` ci-dessus,
+section 3) — pas besoin de la chercher dans les logs ou sur le routeur à
+chaque redémarrage ; c'est aussi ce qui permet à un backend/dashboard de
+joindre le device de façon prévisible (utile pour l'OTA, voir section 7).
 
-## 7. Tests
+## 7. Mise à jour du firmware par WiFi (OTA)
+
+**Activée par défaut** (`CONFIG_ARROSAGE_ENABLE_OTA=y`, dépend de
+`CONFIG_ARROSAGE_ENABLE_WEB_SERVER=y`), même modèle de confiance que le
+reste du serveur web ("réseau local de confiance uniquement"). À la
+différence des autres fonctions du serveur (lecture d'état, pilotage des
+vannes) toutefois, **une mise à jour de firmware acceptée sans
+authentification équivaut à une prise de contrôle totale du device par
+quiconque sur le réseau local** — désactiver `CONFIG_ARROSAGE_ENABLE_OTA`
+via `idf.py menuconfig` si le réseau n'est pas de confiance.
+
+### ⚠️ Migration de table de partitions requise (une seule fois)
+
+L'OTA nécessite une table de partitions à plusieurs slots
+(`CONFIG_PARTITION_TABLE_TWO_OTA`, déjà dans `sdkconfig.defaults`),
+**incompatible avec un device déjà flashé avec l'ancienne table
+"single app"**. Sur un device existant, un reflash complet est nécessaire
+une seule fois avant de pouvoir utiliser l'OTA :
+
+```
+idf.py -p COM3 erase-flash
+idf.py -p COM3 build flash
+```
+(un simple `flash` sans `erase-flash` préalable peut échouer ou laisser des
+données de partition incohérentes si l'ancienne table est encore présente).
+
+### Utilisation
+
+Une fois l'OTA activée et ce reflash initial fait :
+
+- Depuis la page de test (`http://<ip_du_device>/`) : section "Mise à jour
+  firmware (OTA)", sélectionner `build/arrosage_fw.bin` et envoyer.
+- En ligne de commande :
+  ```
+  curl -X POST --data-binary @build/arrosage_fw.bin http://<ip_du_device>/api/ota
+  ```
+
+Le device valide l'image reçue, bascule dessus, puis redémarre
+automatiquement. Un **rollback de sécurité** est en place
+(`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`) : `main/app_main.cpp` confirme le
+bon démarrage de toute image (OTA ou flashée par USB) via
+`ota_confirm_boot_ok()` une fois l'initialisation terminée ; si une image
+fraîchement flashée redémarre de façon inattendue avant cette confirmation
+(crash, coupure), le bootloader revient automatiquement sur l'image
+précédente au prochain démarrage plutôt que de rester bloqué sur une image
+défectueuse.
+
+Voir [`components/ota/`](components/ota/) pour l'implémentation
+(wrapper autour de `esp_ota_ops`, indépendant du transport HTTP).
+
+## 8. Tests
 
 ### Logique pure (sans matériel)
 
@@ -222,7 +276,7 @@ validation progressif (GPIO seul → capteurs → WiFi → MQTT → intégration
 console de diagnostic embarquée (`valve open/close`, `sensor`), et commandes
 `mosquitto_pub`/`mosquitto_sub` prêtes à copier-coller.
 
-## 8. Contrat MQTT — résumé (détails dans `docs/mqtt_contract.md`)
+## 9. Contrat MQTT — résumé (détails dans `docs/mqtt_contract.md`)
 
 - `arrosage/<device_id>/etat` (device → serveur, ~60s, QoS1, retain) :
   **contrat figé**, ne pas modifier les clés du JSON.
@@ -230,7 +284,7 @@ console de diagnostic embarquée (`valve open/close`, `sensor`), et commandes
   pas encore validé par l'équipe backend — voir le document dédié avant
   toute mise en production.
 
-## 9. Documentation Doxygen (référence API)
+## 10. Documentation Doxygen (référence API)
 
 Chaque header public (`components/*/include/*.h`) est annoté en Doxygen
 (`@brief`/`@param`/`@return`), organisé par module (vannes, capteurs,
@@ -246,7 +300,7 @@ généré localement — voir `.gitignore`), avec le README comme page d'accueil
 un module par composant, et des graphes de classes (Graphviz) pour les
 capteurs.
 
-## 10. Limitations connues / à faire
+## 11. Limitations connues / à faire
 
 - `humidity_pct` (capacitif ADC) et `temperature_c` (DS18B20) : choix
   matériel par défaut, pas encore définitivement arrêté — calibration
@@ -254,5 +308,10 @@ capteurs.
   dans `components/sensors/priv_include/soil_humidity_sensor.h`).
 - `battery_v` : toujours `0.0` (device alimenté secteur, pas de batterie
   réelle) — la clé reste présente pour respecter le contrat.
-- Pas de TLS (broker local anonyme, contrainte de départ), pas d'OTA.
+- Pas de TLS (broker local anonyme, contrainte de départ). L'OTA (§7) est
+  activée par défaut mais sans authentification, comme le reste du serveur
+  web — à désactiver explicitement si le réseau local n'est pas de confiance.
+- `components/ota/` n'est couvert par aucun test Unity host (comme le reste
+  des modules liés au matériel/flash — voir §8) : validation uniquement via
+  bring-up manuel sur le device réel.
 - Format du topic commande à faire valider par l'équipe backend.
