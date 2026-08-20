@@ -3,6 +3,7 @@
 #include "esp_log.h"
 
 #include "command.h"
+#include "mqtt.h"
 #include "sensor_manager.h"
 #include "valve_manager.h"
 
@@ -49,6 +50,7 @@ void command_task_run(void* arg)
             case CommandType::GetStatus:
                 valve_manager_publish_all();
                 sensor_manager_publish_last_known();
+                net_mqtt_publish_device_ip();
                 break;
             case CommandType::Invalid:
             default:

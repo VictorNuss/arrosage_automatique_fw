@@ -18,8 +18,8 @@ arrosage/<device_id>/etat/<key>
 ```
 
 Un topic par cle du contrat (`water_level_cm`, `humidity_pct`,
-`temperature_c`, `battery_v`, `vanne_1`, `vanne_2`, `vanne_3`, ...), publie
-**uniquement quand une donnee reelle et fraiche existe** :
+`temperature_c`, `battery_v`, `vanne_1`, `vanne_2`, `vanne_3`, `ip`, ...),
+publie **uniquement quand une donnee reelle et fraiche existe** :
 - Capteur : a chaque lecture materielle reussie (voir
   `sensor_manager_collect()`) - jamais en cas d'echec de lecture, jamais de
   valeur par defaut avant la premiere lecture reussie.
@@ -37,6 +37,9 @@ Un topic par cle du contrat (`water_level_cm`, `humidity_pct`,
   comme en echec si la confirmation finale n'arrive pas avant
   `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S`, et traiter `transitioning`
   comme un etat normal (pas une erreur).
+- `ip` : adresse IP du device (voir "Cle `ip`" plus bas) - publiee a chaque
+  connexion MQTT et sur `get_status`, pas a un rythme d'evenement materiel
+  comme les capteurs/vannes.
 
 QoS 1, **retain=true** sur chaque sous-topic (un abonnement a
 `arrosage/<device_id>/etat/#` recoit donc immediatement la derniere valeur
@@ -51,6 +54,11 @@ Payload vanne :
 {"state": "open"}
 ```
 (`state` vaut `"open"`, `"closed"` ou `"transitioning"`.)
+
+Payload `ip` :
+```json
+{"value": "192.168.1.50"}
+```
 
 Notes d'implementation :
 - Pas de champ `ts` dans le payload : l'horodatage MQTT natif du message (ou
@@ -81,6 +89,29 @@ Notes d'implementation :
   defaut) - pratique pour un affichage immediat dans un navigateur, mais ce
   n'est **plus** le format publie sur MQTT.
 
+### Cle `ip` : retrouver l'adresse d'un device pour l'OTA
+
+Chaque device a une IP **fixe** (pas de DHCP, voir `CONFIG_ARROSAGE_WIFI_STATIC_IP`
+dans `README.md`), choisie manuellement au moment du flashage. Avec un seul
+device, cette IP est trivialement connue ; avec **plusieurs devices geres par
+un meme backend/interface**, il faut un moyen de savoir "quelle IP correspond
+a quel `device_id`" pour cibler le bon device lors d'une mise a jour OTA
+(`POST /api/ota`, voir `components/web/web_server.cpp`).
+
+Plutot que de maintenir cette correspondance a la main cote backend, chaque
+device republie sa propre IP sur `arrosage/<device_id>/etat/ip` :
+- Automatiquement a chaque connexion MQTT (voir `net/mqtt.cpp`,
+  `MQTT_EVENT_CONNECTED`).
+- En reponse a `get_status`.
+- Toujours avec retain=true : un backend qui s'abonne a
+  `arrosage/+/etat/ip` (wildcard sur tous les `device_id`) recoit
+  immediatement l'IP de tous les devices actuellement/deja connus du broker,
+  sans avoir a attendre un evenement.
+
+Le backend peut donc construire dynamiquement la table `device_id -> IP`
+necessaire pour cibler le bon device via `/api/ota`, au lieu de la maintenir
+manuellement.
+
 ### Demander un etat complet : commande `get_status`
 
 Comme le flux `etat` est purement evenementiel (aucune republication
@@ -92,6 +123,7 @@ device republie alors :
 - La derniere valeur connue de **chaque capteur deja lu avec succes au
   moins une fois** - un capteur jamais lu avec succes depuis le boot reste
   absent de la reponse (meme logique anti-valeur-bidon que ci-dessus).
+- Son IP (cle `ip`, voir plus haut).
 
 Le retain=true sur chaque sous-topic couvre deja la plupart des cas de
 reconnexion (le broker rejoue automatiquement la derniere valeur connue par
