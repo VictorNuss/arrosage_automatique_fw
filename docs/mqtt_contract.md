@@ -18,7 +18,8 @@ arrosage/<device_id>/etat/<key>
 ```
 
 Un topic par cle du contrat (`water_level_cm`, `humidity_pct`,
-`temperature_c`, `battery_v`, `vanne_1`, `vanne_2`, `vanne_3`, `ip`, ...),
+`temperature_c`, `battery_v`, `vanne_1`, `vanne_2`, `vanne_3`, `ip`,
+`fw_version`, ...),
 publie **uniquement quand une donnee reelle et fraiche existe** :
 - Capteur : a chaque lecture materielle reussie (voir
   `sensor_manager_collect()`) - jamais en cas d'echec de lecture, jamais de
@@ -37,9 +38,10 @@ publie **uniquement quand une donnee reelle et fraiche existe** :
   comme en echec si la confirmation finale n'arrive pas avant
   `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S`, et traiter `transitioning`
   comme un etat normal (pas une erreur).
-- `ip` : adresse IP du device (voir "Cle `ip`" plus bas) - publiee a chaque
-  connexion MQTT et sur `get_status`, pas a un rythme d'evenement materiel
-  comme les capteurs/vannes.
+- `ip` / `fw_version` : adresse IP et version du firmware du device (voir
+  "Cles `ip` et `fw_version`" plus bas) - publiees a chaque connexion MQTT
+  et sur `get_status`, pas a un rythme d'evenement materiel comme les
+  capteurs/vannes.
 
 QoS 1, **retain=true** sur chaque sous-topic (un abonnement a
 `arrosage/<device_id>/etat/#` recoit donc immediatement la derniere valeur
@@ -59,6 +61,11 @@ Payload `ip` :
 ```json
 {"value": "192.168.1.50"}
 ```
+Payload `fw_version` :
+```json
+{"value": "v1.2.0"}
+```
+(chaine libre, voir plus bas - comme `ip`, ce n'est pas un nombre.)
 
 Notes d'implementation :
 - Pas de champ `ts` dans le payload : l'horodatage MQTT natif du message (ou
@@ -89,7 +96,7 @@ Notes d'implementation :
   defaut) - pratique pour un affichage immediat dans un navigateur, mais ce
   n'est **plus** le format publie sur MQTT.
 
-### Cle `ip` : retrouver l'adresse d'un device pour l'OTA
+### Cles `ip` et `fw_version` : cibler et suivre un device pour l'OTA
 
 Chaque device a une IP **fixe** (pas de DHCP, voir `CONFIG_ARROSAGE_WIFI_STATIC_IP`
 dans `README.md`), choisie manuellement au moment du flashage. Avec un seul
@@ -112,6 +119,16 @@ Le backend peut donc construire dynamiquement la table `device_id -> IP`
 necessaire pour cibler le bon device via `/api/ota`, au lieu de la maintenir
 manuellement.
 
+`fw_version` suit exactement le meme cycle de publication (connexion MQTT +
+`get_status`, retain=true) et porte la version du firmware en cours
+d'execution (`esp_app_get_description()->version`). ESP-IDF la determine au
+build : `PROJECT_VER` si defini, sinon `version.txt` a la racine s'il existe,
+sinon `git describe --always --tags --dirty` (ex. `v1.2.0`,
+`v1.2.0-3-g4b2e22f`, ou un simple hash de commit tant qu'aucun tag n'existe).
+Apres un OTA reussi, le device redemarre, se reconnecte et republie donc sa
+nouvelle version : le backend peut verifier que la mise a jour a bien ete
+appliquee (et non annulee par le rollback, voir `components/ota`).
+
 ### Demander un etat complet : commande `get_status`
 
 Comme le flux `etat` est purement evenementiel (aucune republication
@@ -123,7 +140,7 @@ device republie alors :
 - La derniere valeur connue de **chaque capteur deja lu avec succes au
   moins une fois** - un capteur jamais lu avec succes depuis le boot reste
   absent de la reponse (meme logique anti-valeur-bidon que ci-dessus).
-- Son IP (cle `ip`, voir plus haut).
+- Son IP et sa version de firmware (cles `ip` et `fw_version`, voir plus haut).
 
 Le retain=true sur chaque sous-topic couvre deja la plupart des cas de
 reconnexion (le broker rejoue automatiquement la derniere valeur connue par

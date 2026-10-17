@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+#include "esp_app_desc.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -42,11 +43,11 @@ void mqtt_event_handler(void* /*handler_args*/, esp_event_base_t /*base*/, int32
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT connecte, souscription a %s", s_topic_commande);
             esp_mqtt_client_subscribe(s_client, s_topic_commande, 1);
-            // Positionne le bit AVANT de publier l'IP : net_mqtt_publish_device_ip()
+            // Positionne le bit AVANT de publier : net_mqtt_publish_device_info()
             // (comme tout publish_event()) le verifie pour savoir si le client
             // est pret a publier.
             xEventGroupSetBits(net_events_group(), NET_MQTT_CONNECTED_BIT);
-            net_mqtt_publish_device_ip();
+            net_mqtt_publish_device_info();
             break;
 
         case MQTT_EVENT_DISCONNECTED:
@@ -120,12 +121,18 @@ bool net_mqtt_publish_valve_state(const char* key, const char* state)
     return publish_event(key, payload);
 }
 
-bool net_mqtt_publish_device_ip(void)
+bool net_mqtt_publish_device_info(void)
 {
     // L'IP est statique (voir components/net/wifi.cpp, pas de DHCP) : la
     // valeur Kconfig EST l'IP reelle du device, pas besoin de la lire depuis
     // esp_netif a l'execution.
-    char payload[48];
+    char payload[64];
     snprintf(payload, sizeof(payload), "{\"value\":\"%s\"}", CONFIG_ARROSAGE_WIFI_STATIC_IP);
-    return publish_event("ip", payload);
+    bool ok = publish_event("ip", payload);
+
+    // version est un char[32] termine par '\0' (git describe ou PROJECT_VER) :
+    // tient toujours dans payload, et ne contient pas de guillemets.
+    snprintf(payload, sizeof(payload), "{\"value\":\"%s\"}", esp_app_get_description()->version);
+    ok = publish_event("fw_version", payload) && ok;
+    return ok;
 }

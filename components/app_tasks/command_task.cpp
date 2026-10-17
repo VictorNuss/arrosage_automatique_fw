@@ -50,7 +50,7 @@ void command_task_run(void* arg)
             case CommandType::GetStatus:
                 valve_manager_publish_all();
                 sensor_manager_publish_last_known();
-                net_mqtt_publish_device_ip();
+                net_mqtt_publish_device_info();
                 break;
             case CommandType::Invalid:
             default:
