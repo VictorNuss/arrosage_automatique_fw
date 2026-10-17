@@ -118,6 +118,24 @@ void transition_timer_cb(void* arg)
              to_open ? "ouverte" : "fermee");
 }
 
+// Temps restant (arrondi a la seconde superieure) avant la fermeture
+// automatique, 0 si le timer n'est pas arme. esp_timer_get_expiry_time()
+// renvoie la derniere echeance meme pour un timer arrete, d'ou le test
+// esp_timer_is_active() prealable.
+uint32_t auto_close_remaining_s(int idx)
+{
+    esp_timer_handle_t timer = s_runtime[idx].auto_close_timer;
+    uint64_t expiry_us = 0;
+    if (!esp_timer_is_active(timer) || esp_timer_get_expiry_time(timer, &expiry_us) != ESP_OK) {
+        return 0;
+    }
+    int64_t now_us = esp_timer_get_time();
+    if ((int64_t)expiry_us <= now_us) {
+        return 0;
+    }
+    return (uint32_t)(((int64_t)expiry_us - now_us + 999999) / 1000000);
+}
+
 void auto_close_timer_cb(void* arg)
 {
     int idx = (int)(intptr_t)arg;
@@ -183,32 +201,43 @@ bool valve_manager_open(int idx, uint32_t duration_s)
     }
 
     const valve_config_t& cfg = VALVE_CONFIGS[idx];
-    uint32_t clamped = valve_logic_clamp_duration(duration_s, cfg.max_duration_s);
+
+    // Deja ouverte, ou en cours d'ouverture : le GPIO est deja a 1, rien ne
+    // doit bouger physiquement - la nouvelle commande ajoute seulement du
+    // temps ("extra-time") au lieu de rejouer la transition (qui republierait
+    // "transitioning" pendant 15s pour une vanne qui ne bouge pas).
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    bool already_opening =
+        s_runtime[idx].state == ValveRuntimeState::Open ||
+        (s_runtime[idx].state == ValveRuntimeState::Transitioning && s_runtime[idx].transitioning_to_open);
+    xSemaphoreGive(s_mutex);
+
+    uint32_t effective_s = already_opening
+                               ? valve_logic_extend_duration(auto_close_remaining_s(idx), duration_s, cfg.max_duration_s)
+                               : valve_logic_clamp_duration(duration_s, cfg.max_duration_s);
 
     // Arme le timer de duree AVANT de toucher au GPIO : sans lui, rien ne
     // refermerait cette vanne - on refuse l'ouverture plutot que de la
     // laisser ouverte sans filet.
     esp_timer_stop(s_runtime[idx].auto_close_timer);  // no-op si deja arrete
-    esp_err_t err = esp_timer_start_once(s_runtime[idx].auto_close_timer, (uint64_t)clamped * 1000000ULL);
+    esp_err_t err = esp_timer_start_once(s_runtime[idx].auto_close_timer, (uint64_t)effective_s * 1000000ULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "%s (%s) : armement du timer d'auto-fermeture echoue (%s), ouverture refusee",
                  cfg.name, cfg.mqtt_key, esp_err_to_name(err));
+        if (already_opening) {
+            // Le timer precedent vient d'etre arrete : ne pas laisser une
+            // vanne ouverte sans fermeture programmee.
+            begin_transition(idx, false);
+        }
         return false;
     }
 
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    bool already_open = (s_runtime[idx].state == ValveRuntimeState::Open);
-    xSemaphoreGive(s_mutex);
-
-    if (already_open) {
-        // Deja pleinement ouverte : le GPIO ne change pas, rien ne bouge
-        // physiquement - seule la duree (deja prolongee ci-dessus) change.
-        // Ne pas rejouer la transition, sinon on republierait "transitioning"
-        // pendant 15s pour une vanne qui n'a en realite jamais bouge.
-        ESP_LOGI(TAG, "%s (%s) : deja ouverte, duree prolongee a %u s", cfg.name, cfg.mqtt_key, (unsigned)clamped);
+    if (already_opening) {
+        ESP_LOGI(TAG, "%s (%s) : deja ouverte, prolongee - fermeture dans %u s", cfg.name, cfg.mqtt_key,
+                 (unsigned)effective_s);
     } else {
         begin_transition(idx, true);
-        ESP_LOGI(TAG, "%s (%s) : ouverture lancee pour %u s", cfg.name, cfg.mqtt_key, (unsigned)clamped);
+        ESP_LOGI(TAG, "%s (%s) : ouverture lancee pour %u s", cfg.name, cfg.mqtt_key, (unsigned)effective_s);
     }
 
     return true;

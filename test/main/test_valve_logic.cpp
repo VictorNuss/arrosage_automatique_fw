@@ -22,6 +22,27 @@ TEST_CASE("clamp: duree nulle est ramenee au max (pas d'ouverture indefinie)", "
     TEST_ASSERT_EQUAL_UINT32(1800, valve_logic_clamp_duration(0, 1800));
 }
 
+TEST_CASE("extend: la duree demandee s'ajoute au temps restant", "[valve_logic]")
+{
+    TEST_ASSERT_EQUAL_UINT32(900, valve_logic_extend_duration(300, 600, 1800));
+}
+
+TEST_CASE("extend: le total est borne par la duree max", "[valve_logic]")
+{
+    TEST_ASSERT_EQUAL_UINT32(1800, valve_logic_extend_duration(1500, 600, 1800));
+}
+
+TEST_CASE("extend: une demande au-dela du max ne depasse pas le max", "[valve_logic]")
+{
+    TEST_ASSERT_EQUAL_UINT32(1800, valve_logic_extend_duration(0, 9999, 1800));
+    TEST_ASSERT_EQUAL_UINT32(1800, valve_logic_extend_duration(UINT32_MAX, UINT32_MAX, 1800));
+}
+
+TEST_CASE("extend: sans temps restant, equivaut au clamp", "[valve_logic]")
+{
+    TEST_ASSERT_EQUAL_UINT32(600, valve_logic_extend_duration(0, 600, 1800));
+}
+
 TEST_CASE("find_by_key: trouve l'index correct", "[valve_logic]")
 {
     const char* keys[] = {"vanne_1", "vanne_2", "vanne_3"};

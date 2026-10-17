@@ -44,8 +44,13 @@ void valve_manager_init(void);
  * de la vanne motorisee permette au moteur d'ouvrir reellement le passage
  * d'eau - annoncer "open" plus tot serait faux.
  *
+ * Sur une vanne deja ouverte (ou en cours d'ouverture), rien ne bouge
+ * physiquement et aucun etat n'est republie : duration_s s'ajoute au temps
+ * restant avant la fermeture automatique ("extra-time"), le total borne par
+ * la duree max (voir valve_logic_extend_duration()).
+ *
  * @param idx Index de la vanne (0..VALVE_COUNT-1)
- * @param duration_s Duree d'ouverture demandee, en secondes
+ * @param duration_s Duree d'ouverture demandee (ou ajoutee), en secondes
  * @return false si idx est hors bornes ou si l'armement du timer a echoue
  */
 bool valve_manager_open(int idx, uint32_t duration_s);

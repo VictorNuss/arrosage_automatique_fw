@@ -180,6 +180,12 @@ regles de validation exactes) :
   securite-critique). La duree est de toute facon re-clampee cote firmware
   a la duree max configuree pour la vanne (voir
   `components/valve/valve_config.cpp`).
+- `open` sur une vanne **deja ouverte ou en cours d'ouverture** : pas de
+  nouvelle transition (rien ne bouge physiquement, aucun etat republie),
+  `duration_s` s'**ajoute** au temps restant avant la fermeture automatique
+  ("extra-time"), le total restant toujours borne par la duree max de la
+  vanne. Sur une vanne en cours de fermeture, `open` la rouvre normalement
+  (nouvelle transition, duree = `duration_s`).
 - Tout payload malforme, avec un champ manquant ou d'un type incorrect est
   ignore (loggue en warning), sans jamais faire planter le firmware.
 

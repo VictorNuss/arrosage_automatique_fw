@@ -10,6 +10,12 @@ uint32_t valve_logic_clamp_duration(uint32_t requested_s, uint32_t max_duration_
     return requested_s;
 }
 
+uint32_t valve_logic_extend_duration(uint32_t remaining_s, uint32_t requested_s, uint32_t max_duration_s)
+{
+    uint64_t total = (uint64_t)remaining_s + valve_logic_clamp_duration(requested_s, max_duration_s);
+    return total > max_duration_s ? max_duration_s : (uint32_t)total;
+}
+
 int valve_logic_find_by_key(const char* const* mqtt_keys, size_t count, const char* mqtt_key)
 {
     if (mqtt_key == nullptr) {

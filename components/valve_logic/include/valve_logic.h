@@ -28,6 +28,23 @@ uint32_t valve_logic_clamp_duration(uint32_t requested_s, uint32_t max_duration_
 
 /**
  * @ingroup valve_logic
+ * @brief Nouvelle duree d'ouverture quand une vanne deja ouverte (ou en
+ * cours d'ouverture) recoit une nouvelle commande `open` ("extra-time").
+ *
+ * La duree demandee (clampee comme valve_logic_clamp_duration()) s'ajoute au
+ * temps restant avant la fermeture automatique, le total restant borne par
+ * max_duration_s : prolonger ne permet jamais de depasser la duree max d'une
+ * ouverture.
+ *
+ * @param remaining_s Temps restant avant la fermeture automatique, en secondes
+ * @param requested_s Duree demandee par la nouvelle commande, en secondes
+ * @param max_duration_s Duree max configuree pour la vanne concernee
+ * @return Le temps restant a appliquer a partir de maintenant, dans [1, max_duration_s]
+ */
+uint32_t valve_logic_extend_duration(uint32_t remaining_s, uint32_t requested_s, uint32_t max_duration_s);
+
+/**
+ * @ingroup valve_logic
  * @brief Recherche l'index d'une cle MQTT (ex "vanne_1") dans un tableau de cles.
  * @param mqtt_keys Tableau de cles a parcourir
  * @param count Nombre d'entrees dans mqtt_keys
