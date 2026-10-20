@@ -54,14 +54,6 @@ menu "Arrosage Firmware Configuration"
         string "Serveur NTP"
         default "pool.ntp.org"
 
-    config ARROSAGE_TANK_HEIGHT_CM
-        int "Hauteur totale de la cuve (cm), du capteur ultrason au fond"
-        default 100
-        help
-            Utilisee pour convertir la distance mesuree par le capteur
-            ultrason en niveau d'eau (water_level_cm = hauteur - distance).
-            A calibrer selon le montage physique reel de chaque installation.
-
     config ARROSAGE_VALVE_TRANSITION_DELAY_S
         int "Delai de transition d'une vanne (secondes)"
         default 15
@@ -81,6 +73,46 @@ menu "Arrosage Firmware Configuration"
             A activer uniquement pour le bring-up materiel (voir
             docs/bring_up_checklist.md) : remplace le mode normal (tasks
             command/sensor) par une console interactive de test.
+
+    menu "Capteurs installes"
+
+        comment "Un capteur desactive n'est ni lu ni publie (sa cle MQTT est absente)"
+
+        config ARROSAGE_SENSOR_WATER_LEVEL
+            bool "Niveau d'eau (ultrason JSN-SR04M, distance brute water_distance_cm)"
+            default y
+
+        config ARROSAGE_WATER_LEVEL_INTERVAL_MS
+            int "Intervalle de lecture du niveau d'eau (ms)"
+            depends on ARROSAGE_SENSOR_WATER_LEVEL
+            range 1000 3600000
+            default 30000
+            help
+                Une mesure (et une publication MQTT) par intervalle. Le niveau
+                d'une cuve varie lentement : 30s suffisent en usage normal,
+                descendre a 1000 pour les tests/calibration du capteur.
+
+        config ARROSAGE_SENSOR_TEMPERATURE
+            bool "Temperature (sonde DS18B20, temperature_c)"
+            default n
+
+        config ARROSAGE_SENSOR_SOIL_HUMIDITY
+            bool "Humidite du sol (capacitif ADC, humidity_pct)"
+            default n
+            help
+                A n'activer que si la sonde est reellement branchee : une
+                entree ADC en l'air renvoie quand meme une valeur (bruit),
+                publiee comme une vraie mesure.
+
+        config ARROSAGE_SENSOR_BATTERY_PLACEHOLDER
+            bool "Publier battery_v = 0.0 (constante, pas de vraie batterie)"
+            default n
+            help
+                Le device est alimente secteur : battery_v n'est qu'une
+                constante, gardee en option pour un backend qui exigerait
+                encore cette cle.
+
+    endmenu
 
     menu "Broches (GPIO / ADC)"
 

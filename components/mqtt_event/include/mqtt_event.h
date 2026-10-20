@@ -28,7 +28,7 @@ enum class MqttMessageType {
 
 struct MqttMessage {
     MqttMessageType type;
-    char key[24]; /**< Cle du contrat MQTT (ex "water_level_cm", "vanne_1") */
+    char key[24]; /**< Cle du contrat MQTT (ex "water_distance_cm", "vanne_1") */
     union {
         float numeric_value;    /**< Valide si type == SensorReading */
         const char* valve_state; /**< Valide si type == ValveState : "open"|"closed"|"transitioning" (litteral statique) */

@@ -54,10 +54,10 @@ apres 600s, pas 99999s.
 
 ## 4. Capteur ultrason seul
 
-`sensor` dans la console, comparer `water_level_cm` a une mesure au metre
-ruban (remplir/vider partiellement la cuve). Ajuster
-`CONFIG_ARROSAGE_TANK_HEIGHT_CM` si l'ecart ne correspond pas a la hauteur
-reelle de la cuve.
+`sensor` dans la console, comparer `water_distance_cm` a la distance
+capteur -> surface de l'eau mesuree au metre ruban (remplir/vider
+partiellement la cuve). Les distances cuve vide / pleine se reglent cote
+serveur (`TANK_DISTANCE_EMPTY_CM` / `TANK_DISTANCE_FULL_CM`), pas ici.
 
 ## 5. Capteurs sol / temperature seuls
 

@@ -31,7 +31,7 @@ void sensor_manager_init(void);
  *   sensor_manager_publish_last_known() pour la republication a la demande).
  * - Cote `root` (optionnel, peut etre `nullptr` pour ne declencher que la
  *   relecture materielle ci-dessus sans construire de JSON) : ajoute
- *   systematiquement chaque cle du contrat (ex "water_level_cm": 34.5),
+ *   systematiquement chaque cle du contrat (ex "water_distance_cm": 34.5),
  *   y compris 0.0 par defaut avant la premiere lecture reussie - reserve a
  *   la page web de test (voir state_json.cpp), qui a besoin d'un snapshot
  *   complet immediat plutot que d'un flux d'evenements.

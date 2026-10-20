@@ -1,5 +1,7 @@
 #include "sensor_manager.h"
 
+#include <array>
+
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -20,12 +22,22 @@ const char* TAG = "sensor_manager";
 // GPIO/canal ADC des capteurs, configurables via `idf.py menuconfig` ->
 // Broches (GPIO / ADC) - distincts des pins vannes, voir
 // components/valve/valve_config.cpp.
+// Seuls les capteurs coches dans menuconfig -> Capteurs installes sont
+// instancies : un capteur absent n'est jamais lu, donc jamais publie (une
+// entree ADC en l'air, par exemple, renverrait du bruit pris pour une mesure).
+#ifdef CONFIG_ARROSAGE_SENSOR_WATER_LEVEL
 WaterLevelSensor s_water_level((gpio_num_t)CONFIG_ARROSAGE_WATER_LEVEL_TRIG_GPIO,
-                                (gpio_num_t)CONFIG_ARROSAGE_WATER_LEVEL_ECHO_GPIO,
-                                (float)CONFIG_ARROSAGE_TANK_HEIGHT_CM);
+                                (gpio_num_t)CONFIG_ARROSAGE_WATER_LEVEL_ECHO_GPIO);
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_TEMPERATURE
 Ds18b20TemperatureSensor s_temperature((gpio_num_t)CONFIG_ARROSAGE_TEMPERATURE_GPIO);
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_SOIL_HUMIDITY
 SoilHumiditySensor s_soil_humidity((adc_channel_t)CONFIG_ARROSAGE_SOIL_HUMIDITY_ADC_CHANNEL);
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_BATTERY_PLACEHOLDER
 BatteryPlaceholderSensor s_battery;
+#endif
 
 struct sensor_entry_t {
     Sensor* sensor;
@@ -43,21 +55,46 @@ struct sensor_entry_t {
 // Le DS18B20 (bit-bang + 750ms de conversion) et l'ultrason n'ont pas besoin
 // d'etre relus a ce rythme ; tant que l'intervalle n'est pas ecoule, la
 // derniere valeur connue est republiee sans toucher au materiel.
-const sensor_entry_t s_sensors[] = {
-    {&s_water_level, 30000},   // niveau d'eau : varie lentement (remplissage/vidange)
-    {&s_temperature, 60000},   // DS18B20 : lecture couteuse (bit-bang + conversion 750ms), temperature lente
-    {&s_soil_humidity, 30000}, // humidite sol : varie lentement
-    {&s_battery, 0},           // constante, cout nul : toujours "du"
-};
-constexpr size_t kSensorCount = sizeof(s_sensors) / sizeof(s_sensors[0]);
+//
+// std::array plutot qu'un tableau C : la table peut etre vide si aucun
+// capteur n'est active (device vannes seules).
+constexpr size_t kSensorCount = 0
+#ifdef CONFIG_ARROSAGE_SENSOR_WATER_LEVEL
+                                + 1
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_TEMPERATURE
+                                + 1
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_SOIL_HUMIDITY
+                                + 1
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_BATTERY_PLACEHOLDER
+                                + 1
+#endif
+    ;
 
-float s_last_good[kSensorCount] = {0};
-int64_t s_last_read_us[kSensorCount] = {0};
+const std::array<sensor_entry_t, kSensorCount> s_sensors = {{
+#ifdef CONFIG_ARROSAGE_SENSOR_WATER_LEVEL
+    {&s_water_level, CONFIG_ARROSAGE_WATER_LEVEL_INTERVAL_MS},  // niveau d'eau : varie lentement (remplissage/vidange)
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_TEMPERATURE
+    {&s_temperature, 60000},   // DS18B20 : lecture couteuse (bit-bang + conversion 750ms), temperature lente
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_SOIL_HUMIDITY
+    {&s_soil_humidity, 30000}, // humidite sol : varie lentement
+#endif
+#ifdef CONFIG_ARROSAGE_SENSOR_BATTERY_PLACEHOLDER
+    {&s_battery, 60000},       // constante : inutile de la republier plus souvent
+#endif
+}};
+
+std::array<float, kSensorCount> s_last_good = {};
+std::array<int64_t, kSensorCount> s_last_read_us = {};
 // Distingue "jamais lu avec succes" de "derniere valeur connue vaut 0" -
 // necessaire pour ne jamais pousser de donnee bidon sur MQTT (ni au premier
 // cycle, ni en reponse a un get_status), contrairement a l'ancien
 // comportement qui republiait 0.0 par defaut.
-bool s_has_value[kSensorCount] = {false};
+std::array<bool, kSensorCount> s_has_value = {};
 
 // Protege s_last_good[]/s_last_read_us[] ET l'acces materiel des capteurs
 // (bit-bang GPIO ultrason/DS18B20) : sensor_manager_collect() est appelee a

@@ -25,7 +25,7 @@ void net_mqtt_init(QueueHandle_t command_queue);
 /**
  * @ingroup net
  * @brief Publie une lecture capteur sur `arrosage/<device_id>/etat/<key>` (QoS 1, retain=true).
- * @param key Cle du contrat MQTT (ex "water_level_cm")
+ * @param key Cle du contrat MQTT (ex "water_distance_cm")
  * @param value Valeur mesuree
  * @return false sans rien publier si le client n'est pas connecte
  */

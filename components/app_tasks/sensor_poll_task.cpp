@@ -11,9 +11,11 @@ constexpr uint32_t kTaskStackSize = 4096;
 constexpr UBaseType_t kTaskPriority = 5;
 // Rythme d'appel de sensor_manager_collect(), pas rythme de lecture
 // materielle reel (throttle par capteur, voir sensor_manager.cpp - le plus
-// rapide est a 30s). Suffisamment court pour que chaque capteur soit relu
-// (et donc publie) des que son propre intervalle est ecoule, sans attendre.
-constexpr uint32_t kPollIntervalMs = 5000;
+// rapide peut descendre a 1s, CONFIG_ARROSAGE_WATER_LEVEL_INTERVAL_MS).
+// Suffisamment court pour que chaque capteur soit relu (et donc publie) des
+// que son propre intervalle est ecoule, sans attendre ; un appel sans
+// capteur du ne touche pas au materiel.
+constexpr uint32_t kPollIntervalMs = 1000;
 
 void sensor_poll_task_run(void* /*arg*/)
 {

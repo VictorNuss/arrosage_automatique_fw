@@ -61,8 +61,9 @@ Section **"Arrosage Firmware Configuration"** (voir
 | `CONFIG_ARROSAGE_WIFI_STATIC_IP` / `..._NETMASK` / `..._GATEWAY` / `..._DNS` | IP fixe du device (pas de DHCP) — à choisir hors de la plage DHCP du routeur | `192.168.1.50` / `255.255.255.0` / `192.168.1.1` / `192.168.1.1` |
 | `CONFIG_ARROSAGE_MQTT_BROKER_URI` | URI du broker Mosquitto local (pas de TLS) | `mqtt://192.168.1.10:1883` |
 | `CONFIG_ARROSAGE_NTP_SERVER` | Serveur NTP pour l'horodatage `ts` de la page de test locale (`/api/state`) | `pool.ntp.org` |
-| `CONFIG_ARROSAGE_TANK_HEIGHT_CM` | Hauteur de la cuve (calibration du capteur ultrason) | `100` |
 | `CONFIG_ARROSAGE_ENABLE_DIAG_CONSOLE` | Active la console de diagnostic REPL au lieu du mode normal | `n` |
+| *(sous-menu "Capteurs installes")* `ARROSAGE_SENSOR_WATER_LEVEL` / `..._TEMPERATURE` / `..._SOIL_HUMIDITY` / `..._BATTERY_PLACEHOLDER` | Capteurs réellement branchés : un capteur désactivé n'est ni lu ni publié | `y` / `n` / `n` / `n` |
+| `ARROSAGE_WATER_LEVEL_INTERVAL_MS` | Intervalle de lecture/publication de la distance ultrason (1000 pour les tests) | `30000` |
 | *(sous-menu "Broches (GPIO / ADC)")* `ARROSAGE_VALVE1/2/3_GPIO` | GPIO des relais vannes 1/2/3 | `25` / `26` / `27` |
 | `ARROSAGE_WATER_LEVEL_TRIG_GPIO` / `..._ECHO_GPIO` | GPIO trig/echo du capteur ultrason | `32` / `33` |
 | `ARROSAGE_TEMPERATURE_GPIO` | GPIO de la sonde DS18B20 (1-Wire) | `4` |
@@ -307,7 +308,7 @@ capteurs.
   dry/wet du capteur sol à faire sur site (constantes `kRawDry`/`kRawWet`
   dans `components/sensors/priv_include/soil_humidity_sensor.h`).
 - `battery_v` : toujours `0.0` (device alimenté secteur, pas de batterie
-  réelle) — la clé reste présente pour respecter le contrat.
+  réelle) — désactivé par défaut (`ARROSAGE_SENSOR_BATTERY_PLACEHOLDER`).
 - Pas de TLS (broker local anonyme, contrainte de départ). L'OTA (§7) est
   activée par défaut mais sans authentification, comme le reste du serveur
   web — à désactiver explicitement si le réseau local n'est pas de confiance.

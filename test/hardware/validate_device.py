@@ -25,12 +25,11 @@ import time
 import urllib.error
 import urllib.request
 
+# Les cles capteurs dependent de menuconfig -> Capteurs installes : seul
+# water_distance_cm est actif par defaut.
 EXPECTED_STATE_KEYS = {
     "ts",
-    "water_level_cm",
-    "humidity_pct",
-    "temperature_c",
-    "battery_v",
+    "water_distance_cm",
 }
 
 results = []

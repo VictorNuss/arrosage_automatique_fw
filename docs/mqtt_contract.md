@@ -17,7 +17,7 @@ Le broker est un Mosquitto local, sans TLS, acces anonyme.
 arrosage/<device_id>/etat/<key>
 ```
 
-Un topic par cle du contrat (`water_level_cm`, `humidity_pct`,
+Un topic par cle du contrat (`water_distance_cm`, `humidity_pct`,
 `temperature_c`, `battery_v`, `vanne_1`, `vanne_2`, `vanne_3`, `ip`,
 `fw_version`, ...),
 publie **uniquement quand une donnee reelle et fraiche existe** :
@@ -71,11 +71,12 @@ Notes d'implementation :
 - Pas de champ `ts` dans le payload : l'horodatage MQTT natif du message (ou
   a defaut l'heure de reception cote backend) fait foi. A ajouter si le
   backend a besoin d'un horodatage embarque explicite (a valider avec eux).
-- `water_level_cm` : calcule a partir de la distance mesuree par le capteur
-  ultrason (`water_level_cm = hauteur_cuve_cm - distance_mesuree_cm`),
-  clampe a `[0, hauteur_cuve_cm]`. La hauteur de cuve est configurable via
-  `idf.py menuconfig` -> `CONFIG_ARROSAGE_TANK_HEIGHT_CM`, a **calibrer
-  selon le montage physique reel** de chaque installation.
+- `water_distance_cm` : distance **brute** capteur ultrason -> surface de
+  l'eau (`duree_echo_us / 58`), sans clamp. Le firmware ne connait pas la
+  cuve : c'est le serveur (ingest) qui la convertit en niveau d'eau
+  `water_level_cm` avec ses propres reglages (distances cuve vide / pleine)
+  et republie ce niveau. Changer de cuve ou recalibrer ne demande donc pas
+  de reflasher.
 - `humidity_pct` / `temperature_c` : capteurs materiels **pas encore
   definitivement choisis** par l'equipe firmware au moment de cette
   reecriture. Implementation par defaut : capteur capacitif ADC (sol) +
@@ -85,8 +86,14 @@ Notes d'implementation :
   `components/sensors/priv_include/soil_humidity_sensor.h`, constantes
   `kRawDry`/`kRawWet`, ajustables via le mode diagnostic).
 - `battery_v` : le device est **alimente secteur**, il n'y a pas de vraie
-  batterie. Republie une constante `0.0` (voir `BatteryPlaceholderSensor`)
-  des le premier cycle, comme n'importe quel autre capteur "reussi".
+  batterie. Si `CONFIG_ARROSAGE_SENSOR_BATTERY_PLACEHOLDER` est active,
+  republie une constante `0.0` (voir `BatteryPlaceholderSensor`) des le
+  premier cycle, comme n'importe quel autre capteur "reussi".
+- **Capteurs installes** : chaque capteur s'active dans `idf.py menuconfig`
+  -> Capteurs installes (`CONFIG_ARROSAGE_SENSOR_*`). Par defaut seul
+  `water_distance_cm` est actif ; un capteur desactive n'est jamais lu et sa
+  cle n'est jamais publiee (le backend la decouvre a la premiere mesure,
+  aucune cle n'est obligatoire).
 - **L'ambiguite de l'ancienne version (0.0 = jamais lu OU cuve vide) est
   levee** : tant qu'un capteur n'a jamais ete lu avec succes, sa cle n'est
   simplement jamais publiee (ni au demarrage, ni via `get_status`, voir plus

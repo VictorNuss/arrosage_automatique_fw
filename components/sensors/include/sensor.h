@@ -40,7 +40,7 @@ class Sensor {
     virtual esp_err_t read(float* out_value) = 0;
 
     /**
-     * @brief Cle JSON du contrat d'etat (ex "water_level_cm").
+     * @brief Cle JSON du contrat d'etat (ex "water_distance_cm").
      */
     virtual const char* key() const = 0;
 };
