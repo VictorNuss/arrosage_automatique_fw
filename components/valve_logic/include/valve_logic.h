@@ -52,3 +52,44 @@ uint32_t valve_logic_extend_duration(uint32_t remaining_s, uint32_t requested_s,
  * @return L'index correspondant, ou -1 si la cle est absente ou si mqtt_key est nullptr
  */
 int valve_logic_find_by_key(const char* const* mqtt_keys, size_t count, const char* mqtt_key);
+
+/**
+ * @ingroup valve_logic
+ * @brief Capacite de la file de transitions (voir valve_queue_t).
+ *
+ * Une vanne n'y figure jamais deux fois : la capacite doit seulement etre
+ * >= au nombre de vannes configurees (verifie a valve_manager_init()).
+ */
+#define VALVE_LOGIC_QUEUE_CAPACITY 8
+
+/**
+ * @ingroup valve_logic
+ * @brief File FIFO des vannes dont la transition (ouverture/fermeture) attend
+ * son tour : une seule vanne motorisee bouge a la fois (pic de courant au
+ * demarrage du moteur). Chaque vanne y figure au plus une fois.
+ */
+struct valve_queue_t {
+    int items[VALVE_LOGIC_QUEUE_CAPACITY];
+    size_t count;
+};
+
+/**
+ * @ingroup valve_logic
+ * @brief Ajoute une vanne en fin de file (sans doublon : deja presente, elle garde sa place).
+ * @return false si la file est pleine (et que la vanne n'y etait pas deja)
+ */
+bool valve_queue_push(valve_queue_t* q, int idx);
+
+/**
+ * @ingroup valve_logic
+ * @brief Retire la vanne en tete de file.
+ * @return false si la file est vide (out n'est alors pas modifie)
+ */
+bool valve_queue_pop(valve_queue_t* q, int* out);
+
+/**
+ * @ingroup valve_logic
+ * @brief Retire une vanne de la file, ou qu'elle soit (l'ordre des autres est conserve).
+ * @return false si la vanne n'etait pas dans la file
+ */
+bool valve_queue_remove(valve_queue_t* q, int idx);

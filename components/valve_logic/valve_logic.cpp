@@ -28,3 +28,44 @@ int valve_logic_find_by_key(const char* const* mqtt_keys, size_t count, const ch
     }
     return -1;
 }
+
+bool valve_queue_push(valve_queue_t* q, int idx)
+{
+    for (size_t i = 0; i < q->count; i++) {
+        if (q->items[i] == idx) {
+            return true;
+        }
+    }
+    if (q->count >= VALVE_LOGIC_QUEUE_CAPACITY) {
+        return false;
+    }
+    q->items[q->count++] = idx;
+    return true;
+}
+
+bool valve_queue_pop(valve_queue_t* q, int* out)
+{
+    if (q->count == 0) {
+        return false;
+    }
+    *out = q->items[0];
+    for (size_t i = 1; i < q->count; i++) {
+        q->items[i - 1] = q->items[i];
+    }
+    q->count--;
+    return true;
+}
+
+bool valve_queue_remove(valve_queue_t* q, int idx)
+{
+    for (size_t i = 0; i < q->count; i++) {
+        if (q->items[i] == idx) {
+            for (size_t j = i + 1; j < q->count; j++) {
+                q->items[j - 1] = q->items[j];
+            }
+            q->count--;
+            return true;
+        }
+    }
+    return false;
+}

@@ -90,8 +90,8 @@ idf.py -p COM3 flash monitor
 ```
 main/                  point d'entree (app_main), Kconfig.projbuild
 components/
-  valve/                pilotage GPIO + esp_timer d'auto-fermeture des vannes
-  valve_logic/           logique pure (clamp de duree, recherche par cle) - sans materiel, testable sur l'hote
+  valve/                pilotage GPIO + esp_timer d'auto-fermeture des vannes, une seule vanne en mouvement a la fois (file de transitions)
+  valve_logic/           logique pure (clamp de duree, recherche par cle, file de transitions) - sans materiel, testable sur l'hote
   sensors/               interface Sensor + drivers (ultrason, ADC sol, DS18B20, placeholder batterie)
   command/               parsing JSON du topic commande (pur, testable sur l'hote)
   net/                    WiFi, SNTP, client MQTT

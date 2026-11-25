@@ -37,21 +37,32 @@ void valve_manager_init(void);
  * longtemps). Si l'armement du timer d'auto-fermeture echoue, l'ouverture
  * est refusee plutot que de laisser la vanne ouverte sans filet.
  *
- * Le GPIO bascule immediatement, mais l'etat passe d'abord par
- * "transitioning" (evenement MQTT publie tout de suite) avant de devenir
- * "open" `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S` secondes plus tard (voir
- * valve_manager_state_string()) : le temps que le condensateur de demarrage
- * de la vanne motorisee permette au moteur d'ouvrir reellement le passage
- * d'eau - annoncer "open" plus tot serait faux.
+ * L'etat passe tout de suite a "transitioning" (evenement MQTT publie
+ * immediatement) puis a "open" une fois le moteur arrive en butee,
+ * `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S` secondes apres le basculement
+ * du GPIO (voir valve_manager_state_string()) : le temps que le
+ * condensateur de demarrage de la vanne motorisee permette au moteur
+ * d'ouvrir reellement le passage d'eau - annoncer "open" plus tot serait faux.
+ *
+ * Une seule vanne bouge a la fois (pic de courant au demarrage du moteur) :
+ * si une autre vanne est deja en transition, celle-ci attend son tour dans
+ * une file FIFO (toujours publiee "transitioning") et son GPIO ne bascule
+ * qu'a la fin des transitions precedentes. La duree d'ouverture court a
+ * partir de l'ouverture effective, pas de la commande.
  *
  * Sur une vanne deja ouverte (ou en cours d'ouverture), rien ne bouge
  * physiquement et aucun etat n'est republie : duration_s s'ajoute au temps
  * restant avant la fermeture automatique ("extra-time"), le total borne par
- * la duree max (voir valve_logic_extend_duration()).
+ * la duree max (voir valve_logic_extend_duration()). Idem pour une
+ * ouverture encore en attente (la duree prevue est prolongee). Sur une vanne
+ * dont la fermeture est encore en attente, la fermeture est annulee (la
+ * vanne n'a pas bouge) et la duree re-armee.
  *
  * @param idx Index de la vanne (0..VALVE_COUNT-1)
  * @param duration_s Duree d'ouverture demandee (ou ajoutee), en secondes
  * @return false si idx est hors bornes ou si l'armement du timer a echoue
+ *         (pour une ouverture mise en file, l'echec eventuel au demarrage
+ *         effectif est seulement journalise et publie "closed")
  */
 bool valve_manager_open(int idx, uint32_t duration_s);
 
@@ -59,8 +70,9 @@ bool valve_manager_open(int idx, uint32_t duration_s);
  * @ingroup valve
  * @brief Lance la fermeture d'une vanne (annule le timer d'auto-fermeture actif).
  *
- * Meme delai de transition qu'a l'ouverture (voir valve_manager_open()) avant
- * que l'etat ne devienne "closed".
+ * Meme delai de transition et meme file d'attente qu'a l'ouverture (voir
+ * valve_manager_open()) avant que l'etat ne devienne "closed". Une ouverture
+ * encore en attente est simplement annulee (publiee "closed" tout de suite).
  *
  * @param idx Index de la vanne (0..VALVE_COUNT-1)
  * @return false si idx est hors bornes

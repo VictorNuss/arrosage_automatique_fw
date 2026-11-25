@@ -96,3 +96,53 @@ TEST_CASE("find_by_key: recherche insensible a rien - la casse compte", "[valve_
     const char* keys[] = {"vanne_1"};
     TEST_ASSERT_EQUAL_INT(-1, valve_logic_find_by_key(keys, 1, "Vanne_1"));
 }
+
+TEST_CASE("queue: FIFO, la premiere vanne ajoutee sort en premier", "[valve_logic]")
+{
+    valve_queue_t q = {};
+    TEST_ASSERT_TRUE(valve_queue_push(&q, 2));
+    TEST_ASSERT_TRUE(valve_queue_push(&q, 0));
+    int out = -1;
+    TEST_ASSERT_TRUE(valve_queue_pop(&q, &out));
+    TEST_ASSERT_EQUAL_INT(2, out);
+    TEST_ASSERT_TRUE(valve_queue_pop(&q, &out));
+    TEST_ASSERT_EQUAL_INT(0, out);
+    TEST_ASSERT_FALSE(valve_queue_pop(&q, &out));
+}
+
+TEST_CASE("queue: une vanne deja en attente n'est pas dupliquee et garde sa place", "[valve_logic]")
+{
+    valve_queue_t q = {};
+    valve_queue_push(&q, 1);
+    valve_queue_push(&q, 2);
+    TEST_ASSERT_TRUE(valve_queue_push(&q, 1));
+    TEST_ASSERT_EQUAL_UINT32(2, q.count);
+    int out = -1;
+    valve_queue_pop(&q, &out);
+    TEST_ASSERT_EQUAL_INT(1, out);
+}
+
+TEST_CASE("queue: remove retire une vanne au milieu sans changer l'ordre des autres", "[valve_logic]")
+{
+    valve_queue_t q = {};
+    valve_queue_push(&q, 0);
+    valve_queue_push(&q, 1);
+    valve_queue_push(&q, 2);
+    TEST_ASSERT_TRUE(valve_queue_remove(&q, 1));
+    TEST_ASSERT_FALSE(valve_queue_remove(&q, 1));
+    int out = -1;
+    valve_queue_pop(&q, &out);
+    TEST_ASSERT_EQUAL_INT(0, out);
+    valve_queue_pop(&q, &out);
+    TEST_ASSERT_EQUAL_INT(2, out);
+}
+
+TEST_CASE("queue: push refuse quand la file est pleine", "[valve_logic]")
+{
+    valve_queue_t q = {};
+    for (int i = 0; i < VALVE_LOGIC_QUEUE_CAPACITY; i++) {
+        TEST_ASSERT_TRUE(valve_queue_push(&q, i));
+    }
+    TEST_ASSERT_FALSE(valve_queue_push(&q, VALVE_LOGIC_QUEUE_CAPACITY));
+    TEST_ASSERT_TRUE(valve_queue_push(&q, 0));  // deja presente : pas un ajout
+}

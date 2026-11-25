@@ -33,11 +33,19 @@ publie **uniquement quand une donnee reelle et fraiche existe** :
   passage d'eau, dans un sens comme dans l'autre - annoncer `open`/`closed`
   plus tot serait faux. Une fois ce delai ecoule, `open` ou `closed` est
   publie selon la direction demandee. Fermeture automatique en fin de
-  duree : meme mecanisme (passe par `transitioning` avant `closed`). A
-  garder en tete cote backend/dashboard : ne pas considerer une commande
-  comme en echec si la confirmation finale n'arrive pas avant
-  `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S`, et traiter `transitioning`
-  comme un etat normal (pas une erreur).
+  duree : meme mecanisme (passe par `transitioning` avant `closed`).
+  **Une seule vanne bouge a la fois** (pic de courant au demarrage du
+  moteur) : si une autre vanne est deja en transition, la commande est mise
+  en file d'attente (FIFO) et la vanne est publiee `transitioning` des
+  l'acceptation de la commande, mais son moteur ne demarre qu'a la fin des
+  transitions precedentes - `transitioning` peut donc durer N x
+  `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S` (ex. `stop_all` avec 3 vannes
+  ouvertes : 45s pour la derniere). La duree d'ouverture court a partir de
+  l'ouverture effective. Plusieurs vannes peuvent en revanche etre `open`
+  en meme temps. A garder en tete cote backend/dashboard : ne pas
+  considerer une commande comme en echec si la confirmation finale n'arrive
+  pas avant `CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S`, et traiter
+  `transitioning` comme un etat normal (pas une erreur).
 - `ip` / `fw_version` : adresse IP et version du firmware du device (voir
   "Cles `ip` et `fw_version`" plus bas) - publiees a chaque connexion MQTT
   et sur `get_status`, pas a un rythme d'evenement materiel comme les

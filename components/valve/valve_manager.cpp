@@ -1,5 +1,7 @@
 #include "valve_manager.h"
 
+#include <cstdlib>
+
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -17,13 +19,15 @@ const char* TAG = "valve_manager";
 enum class ValveRuntimeState {
     Closed,
     Open,
-    Transitioning,  // ouverture ou fermeture en cours (voir transitioning_to_open)
+    Transitioning,  // ouverture ou fermeture en cours OU en attente (voir transitioning_to_open, queued)
 };
 
 struct valve_runtime_t {
     ValveRuntimeState state;
-    bool transitioning_to_open;          // direction en cours ; valide seulement si state == Transitioning
-    esp_timer_handle_t auto_close_timer;  // fin de la duree demandee -> lance la fermeture
+    bool transitioning_to_open;           // direction ; valide seulement si state == Transitioning
+    bool queued;                          // transition en attente de son tour : le GPIO n'a pas encore bascule
+    uint32_t pending_open_s;              // duree d'ouverture appliquee au demarrage effectif de l'ouverture
+    esp_timer_handle_t auto_close_timer;  // fin de la duree demandee -> demande la fermeture
     esp_timer_handle_t transition_timer;  // fin de la transition physique (condensateur) -> confirme l'etat
 };
 
@@ -33,6 +37,17 @@ struct valve_runtime_t {
 // taille fixe.
 valve_runtime_t* s_runtime = nullptr;
 SemaphoreHandle_t s_mutex = nullptr;
+
+// Une seule vanne en mouvement a la fois : le demarrage du moteur (via son
+// condensateur) provoque un pic de courant que l'alimentation ne supporte
+// pas pour plusieurs vannes simultanement. s_active_idx est la vanne qui
+// detient le "creneau de transition" (-1 si aucune) ; les autres transitions
+// demandees attendent dans s_queue (FIFO) et demarrent l'une apres l'autre,
+// chacune a la fin de la precedente. Plusieurs vannes peuvent en revanche
+// rester ouvertes en meme temps : seul le mouvement est serialise.
+// Invariant : s_queue non vide => s_active_idx != -1. Protege par s_mutex.
+int s_active_idx = -1;
+valve_queue_t s_queue = {};
 
 // Cles MQTT extraites de VALVE_CONFIGS, construites une fois a l'init - pour
 // reutiliser valve_logic_find_by_key() (logique pure, testee sur l'hote)
@@ -57,44 +72,156 @@ const char* state_string(ValveRuntimeState state)
     }
 }
 
-// Lance une transition (ouverture si to_open, fermeture sinon) : bascule le
-// GPIO immediatement, mais ne confirme l'etat cible ("open"/"closed") sur
-// MQTT qu'apres CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S - le temps que le
-// condensateur de demarrage de la vanne motorisee permette au moteur
-// d'actionner reellement le passage d'eau, dans un sens comme dans l'autre.
-// Generique : utilisee aussi bien par valve_manager_open()/close() que par
-// auto_close_timer_cb() (fin de duree demandee), pas de logique dupliquee.
-void begin_transition(int idx, bool to_open)
+void push_state(int idx, const char* state)
 {
-    const valve_config_t& cfg = VALVE_CONFIGS[idx];
+    if (!mqtt_event_push_valve_state(VALVE_CONFIGS[idx].mqtt_key, state)) {
+        ESP_LOGW(TAG, "Queue MQTT pleine, evenement '%s' de %s perdu", state, VALVE_CONFIGS[idx].mqtt_key);
+    }
+}
 
-    esp_timer_stop(s_runtime[idx].transition_timer);  // no-op si deja arrete ; annule une transition en cours
+// --- Fonctions "_locked" : a appeler avec s_mutex pris ----------------------
 
+// Passe la vanne en "transitioning" vers to_open et lui attribue le creneau
+// de transition s'il est libre (ou si elle le detient deja : inversion de
+// sens d'un moteur deja en mouvement, aucun autre moteur ne demarre). Sinon
+// la met en file d'attente. Retourne true si l'appelant doit lancer
+// start_transition(idx) tout de suite (hors mutex).
+bool request_transition_locked(int idx, bool to_open)
+{
+    valve_runtime_t& rt = s_runtime[idx];
+    rt.state = ValveRuntimeState::Transitioning;
+    rt.transitioning_to_open = to_open;
+
+    if (s_active_idx == -1 || s_active_idx == idx) {
+        s_active_idx = idx;
+        rt.queued = false;
+        return true;
+    }
+    if (!rt.queued) {
+        valve_queue_push(&s_queue, idx);  // ne peut pas echouer : capacite >= VALVE_COUNT (verifie a l'init)
+        rt.queued = true;
+    }
+    return false;
+}
+
+// Annule une transition encore en attente : le GPIO n'a jamais bascule, la
+// vanne revient donc simplement a son etat physique d'origine.
+void cancel_queued_locked(int idx)
+{
+    valve_runtime_t& rt = s_runtime[idx];
+    valve_queue_remove(&s_queue, idx);
+    rt.queued = false;
+    rt.state = rt.transitioning_to_open ? ValveRuntimeState::Closed : ValveRuntimeState::Open;
+}
+
+// Libere le creneau de transition detenu par idx et l'attribue a la
+// prochaine vanne en attente. Retourne cette vanne (a demarrer par
+// l'appelant, hors mutex), ou -1.
+int release_slot_locked(int idx)
+{
+    if (s_active_idx != idx) {
+        return -1;
+    }
+    s_active_idx = -1;
+    int next = -1;
+    if (valve_queue_pop(&s_queue, &next)) {
+        s_active_idx = next;
+        s_runtime[next].queued = false;
+    }
+    return next;
+}
+
+// --- Fonctions a appeler SANS s_mutex ---------------------------------------
+
+// Confirme l'etat cible d'une transition terminee et libere le creneau.
+// Retourne la prochaine vanne a demarrer, ou -1.
+int finish_transition(int idx)
+{
     xSemaphoreTake(s_mutex, portMAX_DELAY);
-    gpio_set_level(cfg.pin, to_open ? 1 : 0);
-    s_runtime[idx].state = ValveRuntimeState::Transitioning;
-    s_runtime[idx].transitioning_to_open = to_open;
+    bool to_open = s_runtime[idx].transitioning_to_open;
+    s_runtime[idx].state = to_open ? ValveRuntimeState::Open : ValveRuntimeState::Closed;
+    int next = release_slot_locked(idx);
     xSemaphoreGive(s_mutex);
 
-    esp_err_t err = esp_timer_start_once(s_runtime[idx].transition_timer,
-                                          (uint64_t)CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S * 1000000ULL);
-    if (err != ESP_OK) {
-        // Sans timer de transition, mieux vaut confirmer immediatement que
-        // de rester bloque en "transitioning" indefiniment.
-        ESP_LOGW(TAG, "%s (%s) : armement du timer de transition echoue (%s), confirmation immediate",
-                 cfg.name, cfg.mqtt_key, esp_err_to_name(err));
+    push_state(idx, to_open ? "open" : "closed");
+    ESP_LOGI(TAG, "%s (%s) transition terminee : %s", VALVE_CONFIGS[idx].name, VALVE_CONFIGS[idx].mqtt_key,
+             to_open ? "ouverte" : "fermee");
+    return next;
+}
+
+// Demarre physiquement la transition de idx, qui detient le creneau : bascule
+// le GPIO, et ne confirmera l'etat cible ("open"/"closed") qu'apres
+// CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S - le temps que le condensateur de
+// demarrage de la vanne motorisee permette au moteur d'actionner reellement
+// le passage d'eau, dans un sens comme dans l'autre. Si ce demarrage echoue,
+// le creneau passe a la vanne suivante (boucle plutot que recursion).
+// Retourne false si la transition de idx elle-meme n'a pas pu demarrer.
+bool start_transition(int idx)
+{
+    bool first = true;
+    bool first_ok = true;
+
+    while (idx >= 0) {
+        const valve_config_t& cfg = VALVE_CONFIGS[idx];
+        valve_runtime_t& rt = s_runtime[idx];
+
         xSemaphoreTake(s_mutex, portMAX_DELAY);
-        s_runtime[idx].state = to_open ? ValveRuntimeState::Open : ValveRuntimeState::Closed;
+        bool to_open = rt.transitioning_to_open;
+        uint32_t open_s = rt.pending_open_s;
         xSemaphoreGive(s_mutex);
-        if (!mqtt_event_push_valve_state(cfg.mqtt_key, to_open ? "open" : "closed")) {
-            ESP_LOGW(TAG, "Queue MQTT pleine, evenement de %s perdu", cfg.mqtt_key);
+
+        int next = -1;
+        bool ok = true;
+
+        if (to_open) {
+            // Arme le timer de duree AVANT de toucher au GPIO : sans lui, rien
+            // ne refermerait cette vanne - on refuse l'ouverture plutot que de
+            // la laisser ouverte sans filet. La duree court a partir de
+            // l'ouverture effective : l'attente en file n'est pas decomptee.
+            esp_timer_stop(rt.auto_close_timer);  // no-op si deja arrete
+            esp_err_t err = esp_timer_start_once(rt.auto_close_timer, (uint64_t)open_s * 1000000ULL);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "%s (%s) : armement du timer d'auto-fermeture echoue (%s), ouverture refusee",
+                         cfg.name, cfg.mqtt_key, esp_err_to_name(err));
+                xSemaphoreTake(s_mutex, portMAX_DELAY);
+                rt.state = ValveRuntimeState::Closed;
+                next = release_slot_locked(idx);
+                xSemaphoreGive(s_mutex);
+                push_state(idx, "closed");
+                ok = false;
+            }
         }
-        return;
+
+        if (ok) {
+            esp_timer_stop(rt.transition_timer);  // no-op si deja arrete ; annule une transition en cours
+
+            xSemaphoreTake(s_mutex, portMAX_DELAY);
+            gpio_set_level(cfg.pin, rt.transitioning_to_open ? 1 : 0);
+            xSemaphoreGive(s_mutex);
+
+            esp_err_t err = esp_timer_start_once(rt.transition_timer,
+                                                  (uint64_t)CONFIG_ARROSAGE_VALVE_TRANSITION_DELAY_S * 1000000ULL);
+            if (err != ESP_OK) {
+                // Sans timer de transition, mieux vaut confirmer immediatement
+                // que de rester bloque en "transitioning" (et de bloquer la file).
+                ESP_LOGW(TAG, "%s (%s) : armement du timer de transition echoue (%s), confirmation immediate",
+                         cfg.name, cfg.mqtt_key, esp_err_to_name(err));
+                next = finish_transition(idx);
+            } else if (to_open) {
+                ESP_LOGI(TAG, "%s (%s) : ouverture lancee pour %u s", cfg.name, cfg.mqtt_key, (unsigned)open_s);
+            } else {
+                ESP_LOGI(TAG, "%s (%s) : fermeture lancee", cfg.name, cfg.mqtt_key);
+            }
+        }
+
+        if (first) {
+            first_ok = ok;
+            first = false;
+        }
+        idx = next;
     }
 
-    if (!mqtt_event_push_valve_state(cfg.mqtt_key, "transitioning")) {
-        ESP_LOGW(TAG, "Queue MQTT pleine, evenement de transition de %s perdu", cfg.mqtt_key);
-    }
+    return first_ok;
 }
 
 void transition_timer_cb(void* arg)
@@ -103,19 +230,7 @@ void transition_timer_cb(void* arg)
     if (!index_valid(idx)) {
         return;
     }
-
-    bool to_open;
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    to_open = s_runtime[idx].transitioning_to_open;
-    s_runtime[idx].state = to_open ? ValveRuntimeState::Open : ValveRuntimeState::Closed;
-    xSemaphoreGive(s_mutex);
-
-    if (!mqtt_event_push_valve_state(VALVE_CONFIGS[idx].mqtt_key, to_open ? "open" : "closed")) {
-        ESP_LOGW(TAG, "Queue MQTT pleine, confirmation d'etat de %s perdue", VALVE_CONFIGS[idx].mqtt_key);
-    }
-
-    ESP_LOGI(TAG, "%s (%s) transition terminee : %s", VALVE_CONFIGS[idx].name, VALVE_CONFIGS[idx].mqtt_key,
-             to_open ? "ouverte" : "fermee");
+    start_transition(finish_transition(idx));
 }
 
 // Temps restant (arrondi a la seconde superieure) avant la fermeture
@@ -143,9 +258,9 @@ void auto_close_timer_cb(void* arg)
         return;
     }
 
-    ESP_LOGI(TAG, "%s (%s) : fin de duree, lancement de la fermeture", VALVE_CONFIGS[idx].name,
+    ESP_LOGI(TAG, "%s (%s) : fin de duree, demande de fermeture", VALVE_CONFIGS[idx].name,
              VALVE_CONFIGS[idx].mqtt_key);
-    begin_transition(idx, false);
+    valve_manager_close(idx);
 }
 
 }  // namespace
@@ -154,6 +269,13 @@ const size_t VALVE_COUNT = VALVE_CONFIG_COUNT;
 
 void valve_manager_init(void)
 {
+    if (VALVE_CONFIG_COUNT > VALVE_LOGIC_QUEUE_CAPACITY) {
+        ESP_LOGE(TAG, "%u vannes configurees mais file de transitions limitee a %d : augmenter "
+                      "VALVE_LOGIC_QUEUE_CAPACITY (valve_logic.h)",
+                 (unsigned)VALVE_CONFIG_COUNT, VALVE_LOGIC_QUEUE_CAPACITY);
+        abort();
+    }
+
     s_mutex = xSemaphoreCreateMutex();
     s_runtime = new valve_runtime_t[VALVE_CONFIG_COUNT]();
     s_mqtt_keys = new const char*[VALVE_CONFIG_COUNT];
@@ -201,45 +323,70 @@ bool valve_manager_open(int idx, uint32_t duration_s)
     }
 
     const valve_config_t& cfg = VALVE_CONFIGS[idx];
+    valve_runtime_t& rt = s_runtime[idx];
+    bool extend = false;
+    bool start_now = false;
+    bool publish_transitioning = false;
+    bool publish_open = false;
 
-    // Deja ouverte, ou en cours d'ouverture : le GPIO est deja a 1, rien ne
-    // doit bouger physiquement - la nouvelle commande ajoute seulement du
-    // temps ("extra-time") au lieu de rejouer la transition (qui republierait
-    // "transitioning" pendant 15s pour une vanne qui ne bouge pas).
     xSemaphoreTake(s_mutex, portMAX_DELAY);
-    bool already_opening =
-        s_runtime[idx].state == ValveRuntimeState::Open ||
-        (s_runtime[idx].state == ValveRuntimeState::Transitioning && s_runtime[idx].transitioning_to_open);
+    bool transitioning = rt.state == ValveRuntimeState::Transitioning;
+
+    if (rt.state == ValveRuntimeState::Open || (transitioning && rt.transitioning_to_open && !rt.queued)) {
+        // Deja ouverte, ou moteur en train d'ouvrir : rien ne doit bouger
+        // physiquement - la commande ajoute seulement du temps ("extra-time")
+        // au lieu de rejouer la transition.
+        extend = true;
+    } else if (transitioning && rt.transitioning_to_open) {
+        // Ouverture deja en attente : la duree s'ajoute a celle prevue.
+        rt.pending_open_s = valve_logic_extend_duration(rt.pending_open_s, duration_s, cfg.max_duration_s);
+        ESP_LOGI(TAG, "%s (%s) : ouverture en attente, duree portee a %u s", cfg.name, cfg.mqtt_key,
+                 (unsigned)rt.pending_open_s);
+    } else if (transitioning && rt.queued) {
+        // Fermeture en attente : la vanne n'a pas encore bouge, elle est
+        // toujours ouverte - on annule la fermeture et on re-arme la duree.
+        cancel_queued_locked(idx);
+        extend = true;
+        publish_open = true;
+    } else {
+        // Fermee, ou moteur en train de fermer : (re)ouverture.
+        rt.pending_open_s = valve_logic_clamp_duration(duration_s, cfg.max_duration_s);
+        start_now = request_transition_locked(idx, true);
+        publish_transitioning = true;
+        if (!start_now) {
+            ESP_LOGI(TAG, "%s (%s) : ouverture (%u s) en attente - une autre vanne est en mouvement", cfg.name,
+                     cfg.mqtt_key, (unsigned)rt.pending_open_s);
+        }
+    }
     xSemaphoreGive(s_mutex);
 
-    uint32_t effective_s = already_opening
-                               ? valve_logic_extend_duration(auto_close_remaining_s(idx), duration_s, cfg.max_duration_s)
-                               : valve_logic_clamp_duration(duration_s, cfg.max_duration_s);
+    if (publish_open) {
+        push_state(idx, "open");
+    }
+    if (publish_transitioning) {
+        push_state(idx, "transitioning");
+    }
+    if (start_now) {
+        return start_transition(idx);
+    }
+    if (!extend) {
+        return true;
+    }
 
-    // Arme le timer de duree AVANT de toucher au GPIO : sans lui, rien ne
-    // refermerait cette vanne - on refuse l'ouverture plutot que de la
-    // laisser ouverte sans filet.
-    esp_timer_stop(s_runtime[idx].auto_close_timer);  // no-op si deja arrete
-    esp_err_t err = esp_timer_start_once(s_runtime[idx].auto_close_timer, (uint64_t)effective_s * 1000000ULL);
+    uint32_t effective_s = valve_logic_extend_duration(auto_close_remaining_s(idx), duration_s, cfg.max_duration_s);
+    esp_timer_stop(rt.auto_close_timer);  // no-op si deja arrete
+    esp_err_t err = esp_timer_start_once(rt.auto_close_timer, (uint64_t)effective_s * 1000000ULL);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s (%s) : armement du timer d'auto-fermeture echoue (%s), ouverture refusee",
-                 cfg.name, cfg.mqtt_key, esp_err_to_name(err));
-        if (already_opening) {
-            // Le timer precedent vient d'etre arrete : ne pas laisser une
-            // vanne ouverte sans fermeture programmee.
-            begin_transition(idx, false);
-        }
+        ESP_LOGE(TAG, "%s (%s) : re-armement du timer d'auto-fermeture echoue (%s), fermeture", cfg.name,
+                 cfg.mqtt_key, esp_err_to_name(err));
+        // Le timer precedent vient d'etre arrete : ne pas laisser une vanne
+        // ouverte sans fermeture programmee.
+        valve_manager_close(idx);
         return false;
     }
 
-    if (already_opening) {
-        ESP_LOGI(TAG, "%s (%s) : deja ouverte, prolongee - fermeture dans %u s", cfg.name, cfg.mqtt_key,
-                 (unsigned)effective_s);
-    } else {
-        begin_transition(idx, true);
-        ESP_LOGI(TAG, "%s (%s) : ouverture lancee pour %u s", cfg.name, cfg.mqtt_key, (unsigned)effective_s);
-    }
-
+    ESP_LOGI(TAG, "%s (%s) : deja ouverte, prolongee - fermeture dans %u s", cfg.name, cfg.mqtt_key,
+             (unsigned)effective_s);
     return true;
 }
 
@@ -250,21 +397,41 @@ bool valve_manager_close(int idx)
     }
 
     const valve_config_t& cfg = VALVE_CONFIGS[idx];
+    valve_runtime_t& rt = s_runtime[idx];
 
-    esp_timer_stop(s_runtime[idx].auto_close_timer);  // no-op si deja arrete ; fermeture explicite, plus besoin
+    esp_timer_stop(rt.auto_close_timer);  // no-op si deja arrete ; fermeture explicite, plus besoin
+
+    bool start_now = false;
+    const char* publish = nullptr;
 
     xSemaphoreTake(s_mutex, portMAX_DELAY);
-    bool already_closed = (s_runtime[idx].state == ValveRuntimeState::Closed);
+    bool transitioning = rt.state == ValveRuntimeState::Transitioning;
+
+    if (rt.state == ValveRuntimeState::Closed || (transitioning && !rt.transitioning_to_open)) {
+        // Deja fermee, ou fermeture deja lancee/en attente : rien a rejouer.
+        ESP_LOGI(TAG, "%s (%s) : deja fermee ou en cours de fermeture", cfg.name, cfg.mqtt_key);
+    } else if (transitioning && rt.queued) {
+        // Ouverture encore en attente : la vanne n'a jamais bouge, on annule.
+        cancel_queued_locked(idx);
+        publish = "closed";
+        ESP_LOGI(TAG, "%s (%s) : ouverture en attente annulee", cfg.name, cfg.mqtt_key);
+    } else {
+        // Ouverte, ou moteur en train d'ouvrir.
+        start_now = request_transition_locked(idx, false);
+        publish = "transitioning";
+        if (!start_now) {
+            ESP_LOGI(TAG, "%s (%s) : fermeture en attente - une autre vanne est en mouvement", cfg.name,
+                     cfg.mqtt_key);
+        }
+    }
     xSemaphoreGive(s_mutex);
 
-    if (already_closed) {
-        // Meme logique qu'a l'ouverture : rien a rejouer physiquement.
-        ESP_LOGI(TAG, "%s (%s) : deja fermee", cfg.name, cfg.mqtt_key);
-    } else {
-        begin_transition(idx, false);
-        ESP_LOGI(TAG, "%s (%s) : fermeture lancee", cfg.name, cfg.mqtt_key);
+    if (publish != nullptr) {
+        push_state(idx, publish);
     }
-
+    if (start_now) {
+        start_transition(idx);
+    }
     return true;
 }
 
